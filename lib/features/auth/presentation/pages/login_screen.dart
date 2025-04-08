@@ -1,26 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/form_validators.dart';
 import '../../../../core/widgets/custom_button.dart';
 import '../../../../core/widgets/custom_text_field.dart';
-import 'login_screen.dart';
+import '../../data/repositories/user_repository.dart';
+import 'signup_screen.dart';
 import 'welcome_screen.dart';
 
-class SignupScreen extends StatefulWidget {
-  const SignupScreen({Key? key}) : super(key: key);
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({Key? key}) : super(key: key);
 
   @override
-  State<SignupScreen> createState() => _SignupScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _SignupScreenState extends State<SignupScreen> {
+class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
+  final _userRepository = UserRepository();
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -28,16 +28,16 @@ class _SignupScreenState extends State<SignupScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _signup() async {
-    // Validate the form
+  Future<void> _login() async {
+    // Validate form
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
+    // Set loading state
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -47,42 +47,33 @@ class _SignupScreenState extends State<SignupScreen> {
       final email = _emailController.text.trim();
       final password = _passwordController.text.trim();
 
-      // Directly use Firebase Auth
-      final userCredential =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      // Login user - direct approach
+      final user = await _userRepository.loginUser(
         email: email,
         password: password,
       );
 
-      // Firebase Auth was successful, immediately navigate
-      // Don't wait for Firestore since it's causing permission errors
+      if (user == null) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = AppConstants.loginFailed;
+        });
+        return;
+      }
 
-      // Stop loading
+      // Keep showing loading for exactly 2 seconds
+      await Future.delayed(const Duration(seconds: 2));
+
+      // Set loading to false immediately
       setState(() {
         _isLoading = false;
       });
 
-      // Navigate to welcome screen
+      // Navigate immediately to welcome screen
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const WelcomeScreen()),
         (route) => false,
       );
-
-      // Try to store in Firestore after navigation (will fail but won't block UI)
-      try {
-        FirebaseFirestore.instance
-            .collection('users')
-            .doc(userCredential.user!.uid)
-            .set({
-          'email': email,
-          'createdAt': Timestamp.now(),
-          'uid': userCredential.user!.uid,
-          'displayName': email.split('@')[0],
-        });
-      } catch (firestoreError) {
-        print('Firestore error: $firestoreError');
-        // Ignore Firestore errors - user is already authenticated
-      }
     } on FirebaseAuthException catch (e) {
       setState(() {
         _isLoading = false;
@@ -96,19 +87,15 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
-  void _navigateToLogin() {
+  void _navigateToSignup() {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      MaterialPageRoute(builder: (context) => const SignupScreen()),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(AppConstants.signup),
-        elevation: 0,
-      ),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -118,10 +105,21 @@ class _SignupScreenState extends State<SignupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 40),
                   Center(
                     child: Text(
-                      AppConstants.createAccount,
+                      AppConstants.appName,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Text(
+                      AppConstants.welcome,
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -140,7 +138,35 @@ class _SignupScreenState extends State<SignupScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 40),
+                  if (AppConstants.devMode) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.amber,
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Development mode: Firebase authentication is bypassed',
+                              style: TextStyle(
+                                color: Colors.amber,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                   if (_errorMessage != null) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -183,22 +209,25 @@ class _SignupScreenState extends State<SignupScreen> {
                     validator: FormValidators.passwordValidator,
                     prefixIcon: const Icon(Icons.lock_outline),
                   ),
-                  const SizedBox(height: 16),
-                  CustomTextField(
-                    label: AppConstants.confirmPassword,
-                    controller: _confirmPasswordController,
-                    isPassword: true,
-                    validator: (value) =>
-                        FormValidators.confirmPasswordValidator(
-                      value,
-                      _passwordController.text,
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () {
+                        // TODO: Implement forgot password
+                      },
+                      child: Text(
+                        AppConstants.forgotPassword,
+                        style: const TextStyle(
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
                     ),
-                    prefixIcon: const Icon(Icons.lock_outline),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
                   CustomButton(
-                    text: AppConstants.signup,
-                    onPressed: _signup,
+                    text: AppConstants.login,
+                    onPressed: _login,
                     isLoading: _isLoading,
                   ),
                   const SizedBox(height: 16),
@@ -206,15 +235,15 @@ class _SignupScreenState extends State<SignupScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        AppConstants.alreadyHaveAccount,
+                        AppConstants.dontHaveAccount,
                         style: const TextStyle(
                           color: AppTheme.textSecondaryColor,
                         ),
                       ),
                       TextButton(
-                        onPressed: _navigateToLogin,
+                        onPressed: _navigateToSignup,
                         child: Text(
-                          AppConstants.login,
+                          AppConstants.signup,
                           style: const TextStyle(
                             color: AppTheme.primaryColor,
                             fontWeight: FontWeight.bold,

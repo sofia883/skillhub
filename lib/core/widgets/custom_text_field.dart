@@ -1,55 +1,66 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class CustomTextField extends StatelessWidget {
-  final TextEditingController controller;
   final String label;
-  final String? hint;
-  final IconData? prefixIcon;
-  final bool obscureText;
-  final TextInputType keyboardType;
+  final TextEditingController controller;
+  final bool isPassword;
   final String? Function(String?)? validator;
-  final bool enabled;
+  final TextInputType keyboardType;
+  final Widget? prefixIcon;
+  final Widget? suffixIcon;
   final int maxLines;
+  final bool enabled;
+  final FocusNode? focusNode;
+  final VoidCallback? onEditingComplete;
+  final Function(String)? onChanged;
 
   const CustomTextField({
     Key? key,
-    required this.controller,
     required this.label,
-    this.hint,
-    this.prefixIcon,
-    this.obscureText = false,
-    this.keyboardType = TextInputType.text,
+    required this.controller,
+    this.isPassword = false,
     this.validator,
-    this.enabled = true,
+    this.keyboardType = TextInputType.text,
+    this.prefixIcon,
+    this.suffixIcon,
     this.maxLines = 1,
+    this.enabled = true,
+    this.focusNode,
+    this.onEditingComplete,
+    this.onChanged,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+    return TextFormField(
+      controller: controller,
+      obscureText: isPassword,
+      validator: validator,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      enabled: enabled,
+      focusNode: focusNode,
+      onEditingComplete: onEditingComplete,
+      onChanged: onChanged,
+      style: const TextStyle(
+        color: AppTheme.textPrimaryColor,
+        fontSize: 16,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(
+          color: AppTheme.textSecondaryColor,
+          fontSize: 16,
         ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: controller,
-          obscureText: obscureText,
-          keyboardType: keyboardType,
-          validator: validator,
-          enabled: enabled,
-          maxLines: maxLines,
-          decoration: InputDecoration(
-            hintText: hint,
-            prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
-          ),
+        prefixIcon: prefixIcon,
+        suffixIcon: suffixIcon,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
         ),
-        const SizedBox(height: 16),
-      ],
+        filled: true,
+        fillColor: Colors.white,
+      ),
     );
   }
 }

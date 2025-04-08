@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class CustomButton extends StatelessWidget {
   final String text;
@@ -6,10 +7,8 @@ class CustomButton extends StatelessWidget {
   final bool isLoading;
   final bool isOutlined;
   final double width;
-  final double height;
   final Color? backgroundColor;
   final Color? textColor;
-  final IconData? icon;
 
   const CustomButton({
     Key? key,
@@ -18,66 +17,60 @@ class CustomButton extends StatelessWidget {
     this.isLoading = false,
     this.isOutlined = false,
     this.width = double.infinity,
-    this.height = 50,
     this.backgroundColor,
     this.textColor,
-    this.icon,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return SizedBox(
       width: width,
-      height: height,
       child: isOutlined
           ? OutlinedButton(
               onPressed: isLoading ? null : onPressed,
               style: OutlinedButton.styleFrom(
-                side: BorderSide(
-                  color: backgroundColor ?? theme.colorScheme.primary,
-                ),
+                side: BorderSide(color: AppTheme.primaryColor),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
+                padding: const EdgeInsets.symmetric(vertical: 15),
               ),
-              child: _buildButtonContent(theme),
+              child: _buttonContent(),
             )
           : ElevatedButton(
               onPressed: isLoading ? null : onPressed,
               style: ElevatedButton.styleFrom(
-                backgroundColor: backgroundColor ?? theme.colorScheme.primary,
+                backgroundColor: backgroundColor ?? AppTheme.primaryColor,
                 foregroundColor: textColor ?? Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
+                padding: const EdgeInsets.symmetric(vertical: 15),
               ),
-              child: _buildButtonContent(theme),
+              child: _buttonContent(),
             ),
     );
   }
 
-  Widget _buildButtonContent(ThemeData theme) {
+  Widget _buttonContent() {
     return isLoading
-        ? const CircularProgressIndicator()
-        : Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (icon != null) ...[
-                Icon(icon),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                text,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isOutlined
-                      ? (textColor ?? theme.colorScheme.primary)
-                      : textColor ?? Colors.white,
-                ),
-              ),
-            ],
+        ? const SizedBox(
+            height: 20,
+            width: 20,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2,
+            ),
+          )
+        : Text(
+            text,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: isOutlined
+                  ? AppTheme.primaryColor
+                  : textColor ?? Colors.white,
+            ),
           );
   }
 }

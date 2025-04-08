@@ -1,77 +1,102 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/custom_button.dart';
+import '../../../../features/home/presentation/pages/home_screen.dart';
+import '../../data/repositories/user_repository.dart';
+import 'login_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
+    final _userRepository = UserRepository();
+    final user = _userRepository.getCurrentUser();
+    final email =
+        AppConstants.devMode ? 'dev@example.com' : (user?.email ?? 'User');
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text(AppConstants.appName),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () => _signOut(context),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Spacer(),
-
-              // App Logo and Name
-              Icon(
-                Icons.handyman_outlined,
-                size: 80,
-                color: Theme.of(context).colorScheme.primary,
+              if (AppConstants.devMode)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 24),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.amber,
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Development mode: Using mock user data',
+                          style: TextStyle(
+                            color: Colors.amber,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const Icon(
+                Icons.check_circle_outline,
+                color: AppTheme.successColor,
+                size: 100,
+              ),
+              const SizedBox(height: 32),
+              Text(
+                'Welcome, ${email.split('@').first}!',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimaryColor,
+                ),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              Text(
-                AppConstants.appName,
-                style: Theme.of(context).textTheme.displayLarge,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Find skilled professionals or share your skills',
+              const Text(
+                'You have successfully logged in to Skill Hub. You can now explore skills or offer your services.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppTheme.textSecondaryColor,
+                ),
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyLarge,
               ),
-
-              const Spacer(),
-
-              // Feature highlights
-              _buildFeatureItem(
-                context,
-                Icons.workspace_premium,
-                'Discover Skilled Professionals',
-                'Find experts for all your needs',
-              ),
-              const SizedBox(height: 24),
-              _buildFeatureItem(
-                context,
-                Icons.handshake,
-                'Share Your Skills',
-                'Offer your services and earn',
-              ),
-              const SizedBox(height: 24),
-              _buildFeatureItem(
-                context,
-                Icons.location_on,
-                'Local & Remote Work',
-                'Connect with nearby or online professionals',
-              ),
-
-              const Spacer(),
-
-              // Action buttons
+              const SizedBox(height: 48),
               CustomButton(
                 text: 'Get Started',
-                onPressed: () =>
-                    Navigator.pushReplacementNamed(context, '/signin'),
+                onPressed: () {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (context) => const HomeScreen()),
+                  );
+                },
               ),
               const SizedBox(height: 16),
               CustomButton(
-                text: 'Already have an account? Sign In',
-                onPressed: () =>
-                    Navigator.pushReplacementNamed(context, '/signin'),
+                text: 'Sign Out',
+                onPressed: () => _signOut(context),
                 isOutlined: true,
               ),
             ],
@@ -81,45 +106,15 @@ class WelcomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFeatureItem(
-    BuildContext context,
-    IconData icon,
-    String title,
-    String description,
-  ) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            icon,
-            color: Theme.of(context).colorScheme.primary,
-            size: 24,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              Text(
-                description,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+  Future<void> _signOut(BuildContext context) async {
+    final _userRepository = UserRepository();
+    await _userRepository.signOut();
+
+    if (context.mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 }
