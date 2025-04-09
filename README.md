@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # skill_hub
+=======
+# skillhub_app
+>>>>>>> c2a9305e2de1ee3e4577e02bea5bd9f3d8cb6db2
 
 A new Flutter project.
 

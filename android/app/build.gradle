@@ -24,7 +24,11 @@ if (flutterVersionName == null) {
 }
 
 android {
+<<<<<<< HEAD
     namespace "com.example.skill_hub"
+=======
+    namespace "com.example.skillhub_app"
+>>>>>>> c2a9305e2de1ee3e4577e02bea5bd9f3d8cb6db2
     compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -43,6 +47,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+<<<<<<< HEAD
         applicationId "com.example.skill_hub"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
@@ -53,6 +58,15 @@ android {
         
         // Enable multidex support
         multiDexEnabled true
+=======
+        applicationId "com.example.skillhub_app"
+        // You can update the following values to match your application needs.
+        // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
+        minSdkVersion flutter.minSdkVersion
+        targetSdkVersion flutter.targetSdkVersion
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+>>>>>>> c2a9305e2de1ee3e4577e02bea5bd9f3d8cb6db2
     }
 
     buildTypes {
@@ -68,6 +82,23 @@ flutter {
     source '../..'
 }
 
+<<<<<<< HEAD
 dependencies {
     implementation 'androidx.multidex:multidex:2.0.1'
 }
+=======
+
+dependencies {
+  // Import the Firebase BoM
+  implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
+
+
+  // TODO: Add the dependencies for Firebase products you want to use
+  // When using the BoM, don't specify versions in Firebase dependencies
+  implementation("com.google.firebase:firebase-analytics")
+
+
+  // Add the dependencies for any other desired Firebase products
+  // https://firebase.google.com/docs/android/setup#available-libraries
+}
+>>>>>>> c2a9305e2de1ee3e4577e02bea5bd9f3d8cb6db2
