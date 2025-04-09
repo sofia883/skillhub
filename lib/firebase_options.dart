@@ -10,7 +10,9 @@ class DefaultFirebaseOptions {
       appId: '1:560124260957:android:401ebb7c4d85cfd45e93b4',
       messagingSenderId: '560124260957',
       projectId: 'skill-hub-9333f',
-      storageBucket: 'skill-hub-9333f.firebasestorage.app',
+      databaseURL: 'https://skill-hub-9333f.firebaseio.com',
+      storageBucket: 'skill-hub-9333f.appspot.com',
+      authDomain: 'skill-hub-9333f.firebaseapp.com',
     );
   }
 }

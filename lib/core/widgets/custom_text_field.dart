@@ -14,6 +14,7 @@ class CustomTextField extends StatelessWidget {
   final FocusNode? focusNode;
   final VoidCallback? onEditingComplete;
   final Function(String)? onChanged;
+  final String? hintText;
 
   const CustomTextField({
     Key? key,
@@ -29,6 +30,7 @@ class CustomTextField extends StatelessWidget {
     this.focusNode,
     this.onEditingComplete,
     this.onChanged,
+    this.hintText,
   }) : super(key: key);
 
   @override
@@ -49,6 +51,7 @@ class CustomTextField extends StatelessWidget {
       ),
       decoration: InputDecoration(
         labelText: label,
+        hintText: hintText,
         labelStyle: const TextStyle(
           color: AppTheme.textSecondaryColor,
           fontSize: 16,
@@ -60,6 +63,24 @@ class CustomTextField extends StatelessWidget {
         ),
         filled: true,
         fillColor: Colors.white,
+        errorStyle: TextStyle(
+          color: Colors.amber[800],
+          fontWeight: FontWeight.w500,
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: Colors.amber[700] ?? Colors.amber,
+            width: 1.5,
+          ),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: Colors.amber[800] ?? Colors.amber,
+            width: 2.0,
+          ),
+        ),
       ),
     );
   }
