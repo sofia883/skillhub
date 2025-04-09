@@ -381,8 +381,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
     });
 
     try {
-      await Future.delayed(const Duration(seconds: 2)); // Simulate loading
-
       // Show uploading status
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -391,31 +389,49 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
       );
 
-      // Upload images to ImgBB
+      // Upload images to ImgBB with retry mechanism
       List<String> imageUrls = [];
       if (_selectedImages.isNotEmpty) {
-        try {
-          imageUrls = await _uploadImages();
-          print('Image upload complete: ${imageUrls.length} images uploaded');
-        } catch (e) {
-          print('Error uploading images: $e');
-          // Continue even if image upload fails
+        int retryCount = 0;
+        const maxRetries = 3;
+
+        while (retryCount < maxRetries) {
+          try {
+            imageUrls = await _uploadImages();
+            if (imageUrls.isNotEmpty) break;
+            retryCount++;
+            if (retryCount < maxRetries) {
+              await Future.delayed(const Duration(seconds: 1));
+            }
+          } catch (e) {
+            print('Image upload attempt ${retryCount + 1} failed: $e');
+            retryCount++;
+            if (retryCount < maxRetries) {
+              await Future.delayed(const Duration(seconds: 1));
+            }
+          }
+        }
+
+        if (imageUrls.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content:
+                  Text('Failed to upload images. Continuing without images...'),
+              backgroundColor: Colors.amber,
+            ),
+          );
         }
       }
 
-      // Create skill data with fixed IDs and ensure all fields are properly initialized
-      final skillId = DateTime.now().millisecondsSinceEpoch.toString();
-      final price = double.tryParse(_priceController.text.trim()) ?? 0.0;
-
       // Create skill data
       final skillData = {
-        'id': skillId,
+        'id': DateTime.now().millisecondsSinceEpoch.toString(),
         'title': _titleController.text.trim(),
         'description': _generateDescription(),
         'category': _selectedCategory,
         'subcategory': _selectedSubcategory,
-        'price': price,
-        'rating': 0.0, // New skills start with no rating
+        'price': double.tryParse(_priceController.text.trim()) ?? 0.0,
+        'rating': 0.0,
         'imageUrl': imageUrls.isNotEmpty
             ? imageUrls.first
             : 'https://via.placeholder.com/300x200?text=No+Image',
@@ -431,25 +447,32 @@ class _AddSkillPageState extends State<AddSkillPage> {
             'Anonymous User',
       };
 
-      print('Attempting to save skill: ${skillData['title']}');
-
-      // Save to Firestore using repository with retry mechanism
+      // Save to Firestore with retry mechanism
+      int retryCount = 0;
+      const maxRetries = 3;
       bool success = false;
-      for (int i = 0; i < 3; i++) {
+
+      while (retryCount < maxRetries && !success) {
         try {
           success = await _skillRepository.addSkill(skillData);
           if (success) break;
-          // Wait briefly before retrying
-          await Future.delayed(const Duration(seconds: 1));
+          retryCount++;
+          if (retryCount < maxRetries) {
+            await Future.delayed(const Duration(seconds: 1));
+          }
         } catch (e) {
-          print('Attempt ${i + 1} failed: $e');
+          print('Skill submission attempt ${retryCount + 1} failed: $e');
+          retryCount++;
+          if (retryCount < maxRetries) {
+            await Future.delayed(const Duration(seconds: 1));
+          }
         }
       }
 
-      // Even if Firestore fails, show success since we saved locally
-      if (mounted) {
-        // Show success message
+      if (success) {
         _showSuccessDialog();
+      } else {
+        throw Exception('Failed to save skill after $maxRetries attempts');
       }
     } catch (e) {
       print('Error submitting skill: $e');
@@ -457,15 +480,15 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                'There was an issue saving your skill. We\'ll try again later.'),
-            backgroundColor: Colors.amber[700],
+              'Failed to save your skill. Please try again later.',
+              style: const TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
             action: SnackBarAction(
-              label: 'Dismiss',
+              label: 'Retry',
               textColor: Colors.white,
-              onPressed: () {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              },
+              onPressed: () => _submitSkill(),
             ),
           ),
         );

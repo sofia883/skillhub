@@ -81,12 +81,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      // Add a delay to show loading indicator
-      await Future.delayed(const Duration(seconds: 2));
-
-      // Force refresh from Firestore and local cache
+      // Check network connectivity before making the request
       final skills =
           await _skillRepository.getSkills(forceRefresh: forceRefresh);
+
       if (mounted) {
         setState(() {
           _allSkills = skills;
@@ -100,6 +98,22 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _isLoading = false;
         });
+        // Show more specific error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to load skills. Please check your connection and try again.',
+              style: const TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _loadSkills(forceRefresh: true),
+            ),
+          ),
+        );
       }
     }
   }
@@ -351,7 +365,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'No Internet Connection',
+            'Connection Error',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Theme.of(context).colorScheme.error,
@@ -361,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
-              'Please check your network connection and try again.',
+              'Unable to load skills. Please check your internet connection and try again.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.error,
