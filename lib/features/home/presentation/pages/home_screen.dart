@@ -81,6 +81,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
+      // Add a delay to show loading indicator
+      await Future.delayed(const Duration(seconds: 2));
+
       // Force refresh from Firestore and local cache
       final skills =
           await _skillRepository.getSkills(forceRefresh: forceRefresh);
@@ -233,15 +236,32 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: _isSearching
-              ? TextField(
-                  controller: _searchController,
-                  decoration: const InputDecoration(
-                    hintText: 'Search skills...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: Colors.white70),
+              ? Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  style: const TextStyle(color: Colors.white),
-                  autofocus: true,
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search skills...',
+                      border: InputBorder.none,
+                      hintStyle: TextStyle(color: Colors.grey[600]),
+                      prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    style: const TextStyle(color: Colors.black87),
+                    autofocus: true,
+                  ),
                 )
               : const Text('Skill Hub'),
           actions: [
@@ -325,30 +345,38 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.devices_outlined,
+            Icons.wifi_off_rounded,
             size: 80,
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.4),
+            color: Theme.of(context).colorScheme.error.withOpacity(0.4),
           ),
           const SizedBox(height: 16),
           Text(
-            'Working in Offline Mode',
+            'No Internet Connection',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.error,
                 ),
           ),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
-              'Your skills are being saved locally. Add a new skill to see it here.',
+              'Please check your network connection and try again.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
             ),
           ),
           const SizedBox(height: 24),
-          ElevatedButton(
+          ElevatedButton.icon(
             onPressed: () => _loadSkills(forceRefresh: true),
-            child: const Text('Refresh'),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),

@@ -374,35 +374,15 @@ class _AddSkillPageState extends State<AddSkillPage> {
   }
 
   Future<void> _submitSkill() async {
-    // Check for blank fields in the final step too
-    if (_titleController.text.isEmpty ||
-        _descriptionController.text.isEmpty ||
-        _locationController.text.isEmpty ||
-        _availabilityController.text.isEmpty ||
-        _priceController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              const Text('Please fill all required fields in previous steps'),
-          backgroundColor: Colors.amber[700],
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'OK',
-            textColor: Colors.white,
-            onPressed: () {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            },
-          ),
-        ),
-      );
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
+      await Future.delayed(const Duration(seconds: 2)); // Simulate loading
+
       // Show uploading status
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
