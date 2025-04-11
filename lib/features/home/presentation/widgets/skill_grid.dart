@@ -10,12 +10,12 @@ class SkillGrid extends StatelessWidget {
   final bool showEmpty;
 
   const SkillGrid({
-    Key? key,
+    super.key,
     required this.skills,
     this.onSkillTap,
     this.isLoading = false,
     this.showEmpty = true,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +49,7 @@ class SkillGrid extends StatelessWidget {
     if (width > 1200) return 4;
     if (width > 800) return 3;
     if (width > 600) return 2;
-    return 1;
+    return 2; // Always show at least 2 items per row
   }
 
   Widget _buildLoadingGrid() {

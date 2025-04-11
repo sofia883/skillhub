@@ -7,12 +7,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
-<<<<<<< HEAD
 import 'package:skill_hub/main.dart';
-=======
-import 'package:skillhub_app/main.dart';
->>>>>>> c2a9305e2de1ee3e4577e02bea5bd9f3d8cb6db2
 
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
@@ -31,4 +28,9 @@ void main() {
     expect(find.text('0'), findsNothing);
     expect(find.text('1'), findsOneWidget);
   });
+}
+
+Future<bool> isConnected() async {
+  var connectivityResult = await (Connectivity().checkConnectivity());
+  return connectivityResult != ConnectivityResult.none;
 }

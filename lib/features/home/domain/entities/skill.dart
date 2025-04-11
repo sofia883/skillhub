@@ -9,6 +9,10 @@ class Skill {
   final String imageUrl;
   final DateTime createdAt;
   final bool isFeatured;
+  final String? location; // Location field
+  final String? userId; // UserId field for security rules
+  final String? phoneNumber; // Added phone number field
+  final Map<String, dynamic>? address; // Structured address field
 
   Skill({
     required this.id,
@@ -21,6 +25,10 @@ class Skill {
     required this.imageUrl,
     required this.createdAt,
     this.isFeatured = false,
+    this.location,
+    this.userId,
+    this.phoneNumber,
+    this.address,
   });
 
   Skill copyWith({
@@ -34,6 +42,10 @@ class Skill {
     String? imageUrl,
     DateTime? createdAt,
     bool? isFeatured,
+    String? location,
+    String? userId,
+    String? phoneNumber,
+    Map<String, dynamic>? address,
   }) {
     return Skill(
       id: id ?? this.id,
@@ -46,6 +58,10 @@ class Skill {
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
       isFeatured: isFeatured ?? this.isFeatured,
+      location: location ?? this.location,
+      userId: userId ?? this.userId,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      address: address ?? this.address,
     );
   }
 }

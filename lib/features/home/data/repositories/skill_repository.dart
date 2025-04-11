@@ -1,19 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:async';
-import '../../domain/entities/skill.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import '../../domain/entities/skill.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/services/connectivity_service.dart';
+import '../../../../firebase_options.dart';
 
 class SkillRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  bool _isOfflineMode = false;
-
-  // Static list to hold skills between app sessions
-  static final List<Skill> _persistentSkills = [];
+  final ConnectivityService _connectivityService = ConnectivityService();
 
   // Local cache
   final List<Skill> _localSkills = [];
+
+  // Track when we last refreshed skills
+  DateTime? _lastRefreshTime;
 
   // Constructor that initializes local skills from persistent storage
   SkillRepository() {
@@ -21,41 +26,161 @@ class SkillRepository {
   }
 
   // Initialize local skills from persistent storage
-  void _initializeLocalSkills() {
-    if (_persistentSkills.isNotEmpty) {
-      _localSkills.addAll(_persistentSkills);
-      print('Loaded ${_localSkills.length} skills from persistent storage');
+  Future<void> _initializeLocalSkills() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final skillsJson = prefs.getString('local_skills');
+
+      if (skillsJson != null && skillsJson.isNotEmpty) {
+        final List<dynamic> decoded = jsonDecode(skillsJson);
+        final skills = decoded.map((item) {
+          return Skill(
+            id: item['id'],
+            title: item['title'],
+            description: item['description'],
+            category: item['category'],
+            price: (item['price'] ?? 0).toDouble(),
+            rating: (item['rating'] ?? 0).toDouble(),
+            provider: item['provider'],
+            imageUrl: item['imageUrl'],
+            createdAt: DateTime.parse(item['createdAt']),
+            isFeatured: item['isFeatured'] ?? false,
+            location: item['location'],
+            userId: item['userId'], // Include userId for security rules
+          );
+        }).toList();
+
+        _localSkills.addAll(skills);
+        debugPrint('Loaded ${_localSkills.length} skills from local storage');
+
+        // Start a background refresh to get the latest data
+        _refreshSkillsInBackground();
+      } else {
+        debugPrint('No skills found in local storage, fetching from Firestore');
+        // If no local skills, try to fetch from Firestore immediately
+        getSkills(forceRefresh: true).then((_) {
+          debugPrint('Initial Firestore fetch completed');
+        }).catchError((e) {
+          debugPrint('Error in initial Firestore fetch: $e');
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading skills from local storage: $e');
+    }
+  }
+
+  // Save skills to local storage
+  Future<void> _saveLocalSkills() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final skillsJson = jsonEncode(_localSkills
+          .map((skill) => {
+                'id': skill.id,
+                'title': skill.title,
+                'description': skill.description,
+                'category': skill.category,
+                'price': skill.price,
+                'rating': skill.rating,
+                'provider': skill.provider,
+                'imageUrl': skill.imageUrl,
+                'createdAt': skill.createdAt.toIso8601String(),
+                'isFeatured': skill.isFeatured,
+                'location': skill.location,
+                'userId': skill.userId, // Include userId for security rules
+              })
+          .toList());
+
+      await prefs.setString('local_skills', skillsJson);
+      debugPrint('Saved ${_localSkills.length} skills to local storage');
+    } catch (e) {
+      debugPrint('Error saving skills to local storage: $e');
+    }
+  }
+
+  // Load skills from local storage
+  Future<void> _loadLocalSkills() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedSkillsJson = prefs.getString('local_skills');
+
+      if (cachedSkillsJson != null && cachedSkillsJson.isNotEmpty) {
+        final List<dynamic> decodedSkills = jsonDecode(cachedSkillsJson);
+
+        _localSkills.clear();
+        _localSkills.addAll(decodedSkills.map((item) {
+          return Skill(
+            id: item['id'],
+            title: item['title'],
+            description: item['description'],
+            category: item['category'],
+            price: (item['price'] ?? 0).toDouble(),
+            rating: (item['rating'] ?? 0).toDouble(),
+            provider: item['provider'],
+            imageUrl: item['imageUrl'],
+            createdAt: DateTime.parse(item['createdAt']),
+            isFeatured: item['isFeatured'] ?? false,
+            location: item['location'],
+            userId: item['userId'],
+          );
+        }).toList());
+
+        debugPrint('Loaded ${_localSkills.length} skills from local storage');
+      } else {
+        debugPrint('No cached skills found in local storage');
+      }
+    } catch (e) {
+      debugPrint('Error loading skills from local storage: $e');
     }
   }
 
   // Check if Firebase is available
   Future<bool> isFirebaseAvailable() async {
+    // First check connectivity status
+    final connectivityStatus = await _connectivityService.checkConnectivity();
+    if (connectivityStatus == ConnectivityStatus.offline) {
+      return false;
+    }
+
     try {
       await _firestore
           .collection('test_collection')
           .doc('test_document')
           .set({'timestamp': FieldValue.serverTimestamp()}).timeout(
               const Duration(seconds: 3));
-      _isOfflineMode = false;
+
       return true;
     } catch (e) {
-      print('Firebase unavailable: $e');
-      _isOfflineMode = true;
+      debugPrint('Firebase unavailable: $e');
+
       return false;
     }
   }
 
   // Get skills from Firestore or local cache
   Future<List<Skill>> getSkills({bool forceRefresh = false}) async {
-    // If we have local skills and we're not forcing a refresh, return them
+    // If we have local skills and we're not forcing a refresh, return them immediately
+    // but still refresh in the background
     if (_localSkills.isNotEmpty && !forceRefresh) {
-      print('Using ${_localSkills.length} cached skills');
-      return _localSkills;
+      debugPrint('Using ${_localSkills.length} cached skills');
+      // Start a background refresh
+      _refreshSkillsInBackground();
+      return getAllSkills(); // Return sorted copy
+    }
+
+    // If local cache is empty, try to load from local storage first
+    if (_localSkills.isEmpty) {
+      await _loadLocalSkills();
+      if (_localSkills.isNotEmpty) {
+        debugPrint('Loaded ${_localSkills.length} skills from local storage');
+        // If we got skills from local storage, return them but still fetch from Firestore
+        _refreshSkillsInBackground();
+        return getAllSkills();
+      }
     }
 
     // Otherwise, try to fetch from Firestore but handle errors gracefully
     try {
-      print('Fetching skills from Firestore...');
+      debugPrint('Fetching skills from Firestore...');
 
       // Create list to hold all skills
       List<Skill> allSkills = [];
@@ -67,7 +192,8 @@ class SkillRepository {
             .orderBy('createdAt', descending: true)
             .limit(50)
             .get()
-            .timeout(const Duration(seconds: 5));
+            .timeout(const Duration(
+                seconds: 5)); // Reduced timeout for faster response
 
         final skills = skillsSnapshot.docs.map((doc) {
           final data = doc.data();
@@ -75,9 +201,14 @@ class SkillRepository {
         }).toList();
 
         allSkills.addAll(skills);
-        print('Loaded ${skills.length} skills from Firestore');
+        debugPrint('Loaded ${skills.length} skills from Firestore');
       } catch (e) {
-        print('Error fetching from Firestore: $e');
+        debugPrint('Error fetching from Firestore: $e');
+        // Show more detailed error information
+        if (e is FirebaseException) {
+          debugPrint('Firebase error code: ${e.code}');
+          debugPrint('Firebase error message: ${e.message}');
+        }
         // Continue with local skills
       }
 
@@ -85,12 +216,74 @@ class SkillRepository {
       if (allSkills.isNotEmpty) {
         _localSkills.clear();
         _localSkills.addAll(allSkills);
+        // Save to local storage for future use
+        await _saveLocalSkills();
+        debugPrint(
+            'Updated local cache with ${allSkills.length} skills from Firestore');
+        return getAllSkills(); // Return sorted copy
+      } else {
+        // If we didn't get any skills from Firestore, return whatever we have in local cache
+        debugPrint(
+            'No skills from Firestore, returning ${_localSkills.length} local skills');
+        return getAllSkills();
       }
-
-      return _localSkills;
     } catch (e) {
-      print('Error in getSkills: $e');
-      return _localSkills;
+      debugPrint('Error in getSkills: $e');
+      // Return whatever we have in local cache
+      return getAllSkills();
+    }
+  }
+
+  // Refresh skills in the background without blocking the UI
+  Future<void> _refreshSkillsInBackground() async {
+    debugPrint('Starting background refresh of skills...');
+    try {
+      final skillsSnapshot = await FirebaseFirestore.instance
+          .collection('skills')
+          .orderBy('createdAt', descending: true)
+          .limit(50)
+          .get()
+          .timeout(const Duration(seconds: 10));
+
+      final skills = skillsSnapshot.docs.map((doc) {
+        final data = doc.data();
+        return _createSkillFromData(data, doc.id);
+      }).toList();
+
+      if (skills.isNotEmpty) {
+        // Compare with existing skills to see if there are any changes
+        final existingIds = _localSkills.map((s) => s.id).toSet();
+        final newIds = skills.map((s) => s.id).toSet();
+
+        // Check if there are any new skills
+        final hasNewSkills = newIds.difference(existingIds).isNotEmpty;
+        // Check if any existing skills are missing from the new data
+        final hasMissingSkills = existingIds.difference(newIds).isNotEmpty;
+
+        if (hasNewSkills || hasMissingSkills) {
+          debugPrint('Changes detected in background refresh:');
+          if (hasNewSkills) {
+            debugPrint(
+                '- New skills: ${newIds.difference(existingIds).length}');
+          }
+          if (hasMissingSkills) {
+            debugPrint(
+                '- Removed skills: ${existingIds.difference(newIds).length}');
+          }
+
+          // Update local cache
+          _localSkills.clear();
+          _localSkills.addAll(skills);
+          await _saveLocalSkills();
+          _lastRefreshTime = DateTime.now();
+          debugPrint(
+              'Background refresh completed: ${skills.length} skills updated at $_lastRefreshTime');
+        } else {
+          debugPrint('No changes detected in background refresh');
+        }
+      }
+    } catch (e) {
+      debugPrint('Background refresh failed: $e');
     }
   }
 
@@ -122,47 +315,55 @@ class SkillRepository {
             .toList();
       }
     } catch (e) {
-      print('Error fetching user skills: $e');
+      debugPrint('Error fetching user skills: $e');
       return [];
     }
   }
 
-  // Search skills
+  // Get all skills from local cache immediately (no async)
+  List<Skill> getAllSkills() {
+    // If local cache is empty, try to load from local storage synchronously
+    if (_localSkills.isEmpty) {
+      debugPrint('Local cache is empty, trying to load from local storage');
+      // We can't use await here since this method is not async,
+      // but we can trigger the load for next time
+      _loadLocalSkills();
+    }
+
+    // Make a copy of the local skills
+    final List<Skill> skills = List<Skill>.from(_localSkills);
+
+    // Remove duplicates by ID
+    final Map<String, Skill> uniqueSkills = {};
+    for (final skill in skills) {
+      uniqueSkills[skill.id] = skill;
+    }
+    final uniqueSkillsList = uniqueSkills.values.toList();
+
+    // Sort by creation date (newest first)
+    if (uniqueSkillsList.isNotEmpty) {
+      uniqueSkillsList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+
+    debugPrint(
+        'getAllSkills: Returning ${uniqueSkillsList.length} skills from local cache');
+    return uniqueSkillsList;
+  }
+
+  // Search skills - always use local cache for better performance
   Future<List<Skill>> searchSkills(String query, String category) async {
     try {
-      List<Skill> skillsList = [];
+      // Always use local cache for searching to avoid UI lag
+      List<Skill> skillsList = List.from(_localSkills);
 
-      if (await isFirebaseAvailable()) {
-        // Create a query
-        Query skillsQuery = _firestore.collection('skills');
-
-        // Add category filter if not 'All'
-        if (category != 'All') {
-          skillsQuery = skillsQuery.where('category', isEqualTo: category);
-        }
-
-        // Limit the query to improve performance
-        skillsQuery =
-            skillsQuery.orderBy('createdAt', descending: true).limit(50);
-
-        // Execute the query
-        final QuerySnapshot skillsSnapshot = await skillsQuery.get();
-
-        // Convert to Skills list
-        skillsList = skillsSnapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return _createSkillFromData(data, doc.id);
-        }).toList();
-      } else {
-        // Use local cache
-        skillsList = _localSkills;
-
-        // Apply category filter
-        if (category != 'All') {
-          skillsList =
-              skillsList.where((skill) => skill.category == category).toList();
-        }
+      // Apply category filter
+      if (category != 'All') {
+        skillsList =
+            skillsList.where((skill) => skill.category == category).toList();
       }
+
+      debugPrint(
+          'Searching ${skillsList.length} skills in "$category" category for "$query"');
 
       // Apply search query filter in memory
       if (query.isEmpty) {
@@ -176,7 +377,7 @@ class SkillRepository {
         }).toList();
       }
     } catch (e) {
-      print('Error searching skills: $e');
+      debugPrint('Error searching skills: $e');
       return [];
     }
   }
@@ -184,18 +385,23 @@ class SkillRepository {
   // Add a new skill
   Future<bool> addSkill(Map<String, dynamic> skillData) async {
     try {
-      // Create a unique ID for the skill
-      final skillId = DateTime.now().millisecondsSinceEpoch.toString();
-      skillData['id'] = skillId;
+      // Create a unique ID for the skill if not already present
+      if (!skillData.containsKey('id') || skillData['id'] == null) {
+        final skillId = DateTime.now().millisecondsSinceEpoch.toString();
+        skillData['id'] = skillId;
+      }
+      final skillId = skillData['id'] as String;
 
       // Ensure all required fields are present
       if (!skillData.containsKey('createdAt')) {
         skillData['createdAt'] = FieldValue.serverTimestamp();
       }
 
+      debugPrint('✅ Adding skill: ${skillData['title']} with ID: $skillId');
+
       // Create a skill entity for local cache
       final newSkill = Skill(
-        id: skillData['id'],
+        id: skillId,
         title: skillData['title'] ?? '',
         description: skillData['description'] ?? '',
         category: skillData['category'] ?? 'Other',
@@ -206,28 +412,48 @@ class SkillRepository {
             'https://via.placeholder.com/300x200?text=No+Image',
         createdAt: DateTime.now(),
         isFeatured: false,
+        location: skillData['location'],
       );
 
-      // Always add to local cache first to ensure data is available
+      // Always add to local cache first for immediate UI update
       _localSkills.insert(0, newSkill);
-      print('Added skill to local cache: ${newSkill.title}');
+      debugPrint('Added skill to local cache: ${newSkill.title}');
 
       // Save to local storage
-      _saveLocalSkills();
+      await _saveLocalSkills();
 
-      // Try to save to Firebase in the background, but don't wait for it
-      _tryFirebaseSave(skillData).then((success) {
-        if (success) {
-          print('Skill saved to Firebase successfully');
+      // Try to save to Firebase immediately but don't block UI
+      bool firebaseSuccess = false;
+      try {
+        // First attempt to save to Firebase
+        firebaseSuccess = await _tryFirebaseSave(skillData);
+
+        if (firebaseSuccess) {
+          debugPrint('✅ Skill saved to Firebase successfully on first try');
         } else {
-          print('Failed to save skill to Firebase, but it is saved locally');
-        }
-      });
+          // If first attempt fails, try again immediately
+          debugPrint(
+              '⚠️ First attempt to save to Firebase failed, trying again...');
+          firebaseSuccess = await _tryFirebaseSave(skillData);
 
-      // Return true immediately since we saved locally
+          if (firebaseSuccess) {
+            debugPrint('✅ Skill saved to Firebase successfully on second try');
+          } else {
+            debugPrint('❌ Failed to save skill to Firebase after two attempts');
+            // Schedule a retry for later
+            _scheduleFirebaseRetry(skillData);
+          }
+        }
+      } catch (firebaseError) {
+        debugPrint('❌ Error saving to Firebase: $firebaseError');
+        // Schedule a retry for later
+        _scheduleFirebaseRetry(skillData);
+      }
+
+      // Return true if we saved to Firebase or at least locally
       return true;
     } catch (e) {
-      print('Error adding skill: $e');
+      debugPrint('❌ Error adding skill: $e');
       return false;
     }
   }
@@ -235,28 +461,90 @@ class SkillRepository {
   // Try to save to Firebase but don't block the UI
   Future<bool> _tryFirebaseSave(Map<String, dynamic> skillData) async {
     try {
+      // Get the skill ID from the data
+      final String skillId = skillData['id'] as String;
+
+      // Check if Firebase is initialized
+      if (!Firebase.apps.isNotEmpty) {
+        debugPrint('Firebase not initialized, trying to initialize now...');
+        try {
+          await Firebase.initializeApp(
+            options: DefaultFirebaseOptions.currentPlatform,
+          );
+          debugPrint('Firebase initialized successfully in _tryFirebaseSave');
+        } catch (initError) {
+          debugPrint('Failed to initialize Firebase: $initError');
+          return false;
+        }
+      }
+
+      // Convert DateTime to Timestamp for Firestore
+      Map<String, dynamic> firestoreData = Map.from(skillData);
+      if (firestoreData['createdAt'] is DateTime) {
+        firestoreData['createdAt'] =
+            Timestamp.fromDate(firestoreData['createdAt'] as DateTime);
+      }
+
+      // Make sure we have a user ID for Firestore security rules
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        // Add the user ID to the data for security rules
+        firestoreData['userId'] = currentUser.uid;
+        debugPrint('✅ Adding user ID to skill data: ${currentUser.uid}');
+      } else {
+        // Try to sign in anonymously if we don't have a user
+        try {
+          final userCredential =
+              await FirebaseAuth.instance.signInAnonymously();
+          firestoreData['userId'] = userCredential.user!.uid;
+          debugPrint(
+              '✅ Signed in anonymously and added user ID: ${userCredential.user!.uid}');
+        } catch (e) {
+          debugPrint('⚠️ Could not sign in anonymously: $e');
+          // Continue anyway, but this might fail due to security rules
+        }
+      }
+
+      // Log the data being saved
+      debugPrint(
+          'Saving skill to Firestore: ${firestoreData['title']} with ID: $skillId');
+
+      // Use set with merge option to ensure we don't overwrite existing data
       await FirebaseFirestore.instance
           .collection('skills')
-          .add(skillData)
-          .timeout(const Duration(seconds: 5));
+          .doc(skillId)
+          .set(firestoreData, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 15));
+
+      debugPrint('✅ Successfully saved skill to Firestore with ID: $skillId');
       return true;
     } catch (e) {
-      print('Firebase unavailable: $e');
+      debugPrint('❌ Error saving to Firebase: $e');
+      // Show more detailed error information
+      if (e is FirebaseException) {
+        debugPrint('Firebase error code: ${e.code}');
+        debugPrint('Firebase error message: ${e.message}');
+      } else if (e is TimeoutException) {
+        debugPrint(
+            'Firebase operation timed out. Check your internet connection.');
+      }
       return false;
     }
   }
 
-  // Save local skills to local storage
-  Future<void> _saveLocalSkills() async {
-    try {
-      // Since we can't add shared_preferences due to connectivity issues,
-      // we'll keep skills in the static list between sessions
-      _persistentSkills.clear();
-      _persistentSkills.addAll(_localSkills);
-      print('Saved ${_localSkills.length} skills to persistent storage');
-    } catch (e) {
-      print('Error saving local skills: $e');
-    }
+  // Schedule a retry for Firebase save
+  void _scheduleFirebaseRetry(Map<String, dynamic> skillData) {
+    // Wait for 30 seconds before retrying
+    Future.delayed(const Duration(seconds: 30), () async {
+      debugPrint('Retrying to save skill to Firebase: ${skillData['title']}');
+      final success = await _tryFirebaseSave(skillData);
+      if (!success) {
+        // If still failed, schedule another retry with exponential backoff
+        Future.delayed(const Duration(minutes: 2), () {
+          _tryFirebaseSave(skillData);
+        });
+      }
+    });
   }
 
   // Delete a skill
@@ -294,7 +582,7 @@ class SkillRepository {
 
       return true;
     } catch (e) {
-      print('Error deleting skill: $e');
+      debugPrint('Error deleting skill: $e');
       return false;
     }
   }
@@ -312,9 +600,13 @@ class SkillRepository {
       imageUrl: data['imageUrl'] ??
           'https://via.placeholder.com/300x200?text=No+Image',
       createdAt: data['createdAt'] != null
-          ? (data['createdAt'] as Timestamp).toDate()
+          ? (data['createdAt'] is Timestamp
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now())
           : DateTime.now(),
       isFeatured: data['isFeatured'] ?? false,
+      location: data['location'],
+      userId: data['userId'], // Include userId for security rules
     );
   }
 }

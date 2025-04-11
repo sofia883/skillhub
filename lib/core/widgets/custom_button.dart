@@ -3,15 +3,17 @@ import '../theme/app_theme.dart';
 
 class CustomButton extends StatelessWidget {
   final String text;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool isLoading;
   final bool isOutlined;
   final double width;
   final Color? backgroundColor;
   final Color? textColor;
+  final IconData? icon; // Added icon parameter
+  final double? iconSize; // Added icon size parameter
 
   const CustomButton({
-    Key? key,
+    super.key,
     required this.text,
     required this.onPressed,
     this.isLoading = false,
@@ -19,7 +21,9 @@ class CustomButton extends StatelessWidget {
     this.width = double.infinity,
     this.backgroundColor,
     this.textColor,
-  }) : super(key: key);
+    this.icon, // Optional icon
+    this.iconSize = 18.0, // Default icon size
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -53,24 +57,42 @@ class CustomButton extends StatelessWidget {
   }
 
   Widget _buttonContent() {
-    return isLoading
-        ? const SizedBox(
-            height: 20,
-            width: 20,
-            child: CircularProgressIndicator(
-              color: Colors.white,
-              strokeWidth: 2,
-            ),
-          )
-        : Text(
-            text,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: isOutlined
-                  ? AppTheme.primaryColor
-                  : textColor ?? Colors.white,
-            ),
-          );
+    if (isLoading) {
+      return const SizedBox(
+        height: 20,
+        width: 20,
+        child: CircularProgressIndicator(
+          color: Colors.white,
+          strokeWidth: 2,
+        ),
+      );
+    }
+
+    // Text style for button
+    final textStyle = TextStyle(
+      fontSize: 16,
+      fontWeight: FontWeight.w600,
+      color: isOutlined ? AppTheme.primaryColor : textColor ?? Colors.white,
+    );
+
+    // If there's an icon, show icon and text
+    if (icon != null) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            size: iconSize,
+            color:
+                isOutlined ? AppTheme.primaryColor : textColor ?? Colors.white,
+          ),
+          const SizedBox(width: 8),
+          Text(text, style: textStyle),
+        ],
+      );
+    }
+
+    // Otherwise just show text
+    return Text(text, style: textStyle);
   }
 }

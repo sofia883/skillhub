@@ -1,0 +1,60 @@
+# Firestore Security Rules
+
+To fix the permission error "caller does not have permission to execute the specified operation", you need to update your Firestore security rules.
+
+## How to Update Firestore Security Rules
+
+1. Go to the [Firebase Console](https://console.firebase.google.com/)
+2. Select your project
+3. Click on "Firestore Database" in the left sidebar
+4. Click on the "Rules" tab
+5. Replace the current rules with the following:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read access to all users for all documents
+    match /{document=**} {
+      allow read: if true;
+    }
+    
+    // Allow write access to authenticated users for their own skills
+    match /skills/{skillId} {
+      allow write: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Allow write access to the test collection
+    match /test_collection/{document} {
+      allow write: if true;
+    }
+  }
+}
+```
+
+## What These Rules Do
+
+1. **Read Access**: Anyone can read any document in the database
+2. **Write Access for Skills**: Only authenticated users can write to the skills collection, and only if the userId field in the document matches their user ID
+3. **Test Collection**: Anyone can write to the test_collection for testing purposes
+
+## Temporary Solution for Development
+
+If you're still having issues and just want to get things working during development, you can temporarily use these more permissive rules:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+```
+
+**WARNING**: These rules allow anyone to read and write any data in your database. Only use this for development and testing, and make sure to update the rules before going to production.
+
+## After Updating Rules
+
+After updating the rules, restart your app and try adding a skill again. The permission error should be resolved.

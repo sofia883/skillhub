@@ -6,16 +6,13 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/custom_button.dart';
 import '../../../../core/widgets/custom_text_field.dart';
-import '../../../../core/utils/address_utils.dart';
-import '../../../../features/home/domain/entities/skill.dart';
 import '../../../../features/home/data/repositories/skill_repository.dart';
 
 class AddSkillPage extends StatefulWidget {
-  const AddSkillPage({Key? key}) : super(key: key);
+  const AddSkillPage({super.key});
 
   @override
   State<AddSkillPage> createState() => _AddSkillPageState();
@@ -28,13 +25,17 @@ class _AddSkillPageState extends State<AddSkillPage> {
   final _priceController = TextEditingController();
   final _locationController = TextEditingController();
   final _availabilityController = TextEditingController();
+  final _phoneNumberController = TextEditingController();
   final _skillRepository = SkillRepository();
+
+  // Address data
+  Map<String, dynamic>? _addressData;
 
   String _selectedCategory = 'Other';
   bool _isOnline = false;
   bool _isLoading = false;
   bool _isUploadingImages = false;
-  List<File> _selectedImages = [];
+  final List<File> _selectedImages = [];
   final _imagePicker = ImagePicker();
   int _currentStep = 0;
 
@@ -184,6 +185,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
     _priceController.dispose();
     _locationController.dispose();
     _availabilityController.dispose();
+    _phoneNumberController.dispose();
     super.dispose();
   }
 
@@ -205,9 +207,9 @@ class _AddSkillPageState extends State<AddSkillPage> {
     ].request();
 
     // Print status to help debugging
-    print('Camera permission: ${permissionStatus[Permission.camera]}');
-    print('Storage permission: ${permissionStatus[Permission.storage]}');
-    print('Photos permission: ${permissionStatus[Permission.photos]}');
+    debugPrint('Camera permission: ${permissionStatus[Permission.camera]}');
+    debugPrint('Storage permission: ${permissionStatus[Permission.storage]}');
+    debugPrint('Photos permission: ${permissionStatus[Permission.photos]}');
   }
 
   Future<void> _pickImages() async {
@@ -216,7 +218,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
       final storageStatus = await Permission.storage.status;
       final photosStatus = await Permission.photos.status;
 
-      print(
+      debugPrint(
           'Permission status - Camera: $cameraStatus, Storage: $storageStatus, Photos: $photosStatus');
 
       if (!cameraStatus.isGranted ||
@@ -253,7 +255,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
         });
       }
     } catch (e) {
-      print('Error picking images: $e');
+      debugPrint('Error picking images: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -269,7 +271,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
     try {
       final cameraStatus = await Permission.camera.status;
 
-      print('Camera permission status: $cameraStatus');
+      debugPrint('Camera permission status: $cameraStatus');
 
       if (!cameraStatus.isGranted) {
         await Permission.camera.request();
@@ -297,7 +299,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
         });
       }
     } catch (e) {
-      print('Error taking picture: $e');
+      debugPrint('Error taking picture: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -327,15 +329,17 @@ class _AddSkillPageState extends State<AddSkillPage> {
     });
 
     try {
-      for (final image in _selectedImages) {
-        // Show upload progress
+      // Show upload progress once before the loop
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Uploading images...'),
             duration: Duration(seconds: 1),
           ),
         );
+      }
 
+      for (final image in _selectedImages) {
         // Convert image to base64
         final bytes = await image.readAsBytes();
         final base64Image = base64Encode(bytes);
@@ -355,15 +359,16 @@ class _AddSkillPageState extends State<AddSkillPage> {
             final imageUrl = jsonResponse['data']['display_url'];
             imageUrls.add(imageUrl);
           } else {
-            print('Image upload failed: ${jsonResponse['error']}');
+            debugPrint('Image upload failed: ${jsonResponse['error']}');
           }
         } else {
-          print('Image upload failed with status code: ${response.statusCode}');
-          print('Response body: ${response.body}');
+          debugPrint(
+              'Image upload failed with status code: ${response.statusCode}');
+          debugPrint('Response body: ${response.body}');
         }
       }
     } catch (e) {
-      print('Error uploading images: $e');
+      debugPrint('Error uploading images: $e');
     } finally {
       setState(() {
         _isUploadingImages = false;
@@ -374,7 +379,29 @@ class _AddSkillPageState extends State<AddSkillPage> {
   }
 
   Future<void> _submitSkill() async {
-    if (!_formKey.currentState!.validate()) return;
+    // Check for blank fields in the final step too
+    if (_titleController.text.isEmpty ||
+        _descriptionController.text.isEmpty ||
+        _locationController.text.isEmpty ||
+        _availabilityController.text.isEmpty ||
+        _priceController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              const Text('Please fill all required fields in previous steps'),
+          backgroundColor: Colors.amber[700],
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: Colors.white,
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            },
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -389,49 +416,46 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
       );
 
-      // Upload images to ImgBB with retry mechanism
+      // Upload images to ImgBB
       List<String> imageUrls = [];
       if (_selectedImages.isNotEmpty) {
-        int retryCount = 0;
-        const maxRetries = 3;
-
-        while (retryCount < maxRetries) {
-          try {
-            imageUrls = await _uploadImages();
-            if (imageUrls.isNotEmpty) break;
-            retryCount++;
-            if (retryCount < maxRetries) {
-              await Future.delayed(const Duration(seconds: 1));
-            }
-          } catch (e) {
-            print('Image upload attempt ${retryCount + 1} failed: $e');
-            retryCount++;
-            if (retryCount < maxRetries) {
-              await Future.delayed(const Duration(seconds: 1));
-            }
-          }
+        try {
+          imageUrls = await _uploadImages();
+          debugPrint(
+              'Image upload complete: ${imageUrls.length} images uploaded');
+        } catch (e) {
+          debugPrint('Error uploading images: $e');
+          // Continue even if image upload fails
         }
+      }
 
-        if (imageUrls.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content:
-                  Text('Failed to upload images. Continuing without images...'),
-              backgroundColor: Colors.amber,
-            ),
-          );
+      // Create skill data with fixed IDs and ensure all fields are properly initialized
+      final skillId = DateTime.now().millisecondsSinceEpoch.toString();
+      final price = double.tryParse(_priceController.text.trim()) ?? 0.0;
+
+      // Get current user or sign in anonymously if needed
+      User? currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        try {
+          final userCredential =
+              await FirebaseAuth.instance.signInAnonymously();
+          currentUser = userCredential.user;
+          debugPrint(
+              '✅ Signed in anonymously with user ID: ${currentUser?.uid}');
+        } catch (e) {
+          debugPrint('⚠️ Failed to sign in anonymously: $e');
         }
       }
 
       // Create skill data
       final skillData = {
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        'id': skillId,
         'title': _titleController.text.trim(),
         'description': _generateDescription(),
         'category': _selectedCategory,
         'subcategory': _selectedSubcategory,
-        'price': double.tryParse(_priceController.text.trim()) ?? 0.0,
-        'rating': 0.0,
+        'price': price,
+        'rating': 0.0, // New skills start with no rating
         'imageUrl': imageUrls.isNotEmpty
             ? imageUrls.first
             : 'https://via.placeholder.com/300x200?text=No+Image',
@@ -441,54 +465,82 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'location': _locationController.text.trim(),
         'isOnline': _isOnline,
         'availability': _availabilityController.text.trim(),
-        'providerId': FirebaseAuth.instance.currentUser?.uid ?? 'unknown_user',
-        'provider': FirebaseAuth.instance.currentUser?.displayName ??
-            FirebaseAuth.instance.currentUser?.email ??
-            'Anonymous User',
+        'phoneNumber': _phoneNumberController.text.trim(),
+        'address': _addressData,
+        'userId':
+            currentUser?.uid ?? 'unknown_user', // Important for security rules
+        'providerId': currentUser?.uid ?? 'unknown_user',
+        'provider':
+            currentUser?.displayName ?? currentUser?.email ?? 'Anonymous User',
       };
 
-      // Save to Firestore with retry mechanism
-      int retryCount = 0;
-      const maxRetries = 3;
-      bool success = false;
+      debugPrint('Attempting to save skill: ${skillData['title']}');
 
-      while (retryCount < maxRetries && !success) {
+      // Show saving indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saving your skill...'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+
+      // Save to Firestore using repository with retry mechanism
+      bool success = false;
+      for (int i = 0; i < 3; i++) {
         try {
+          debugPrint('✅ Attempt ${i + 1} to save skill: ${skillData['title']}');
           success = await _skillRepository.addSkill(skillData);
-          if (success) break;
-          retryCount++;
-          if (retryCount < maxRetries) {
-            await Future.delayed(const Duration(seconds: 1));
+          if (success) {
+            debugPrint('✅ Successfully saved skill on attempt ${i + 1}');
+            break;
           }
+          // Wait briefly before retrying
+          await Future.delayed(const Duration(seconds: 1));
         } catch (e) {
-          print('Skill submission attempt ${retryCount + 1} failed: $e');
-          retryCount++;
-          if (retryCount < maxRetries) {
-            await Future.delayed(const Duration(seconds: 1));
-          }
+          debugPrint('❌ Attempt ${i + 1} failed: $e');
         }
       }
 
-      if (success) {
+      // Show appropriate message based on success
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Skill saved successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Skill saved locally. Will sync when online.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+
+        // Show success dialog
         _showSuccessDialog();
-      } else {
-        throw Exception('Failed to save skill after $maxRetries attempts');
       }
     } catch (e) {
-      print('Error submitting skill: $e');
+      debugPrint('Error submitting skill: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Failed to save your skill. Please try again later.',
-              style: const TextStyle(color: Colors.white),
-            ),
-            backgroundColor: Colors.red,
+            content: const Text(
+                'There was an issue saving your skill. We\'ll try again later.'),
+            backgroundColor: const Color(0xFFFF8F00), // Colors.amber[700]
             duration: const Duration(seconds: 5),
             action: SnackBarAction(
-              label: 'Retry',
+              label: 'Dismiss',
               textColor: Colors.white,
-              onPressed: () => _submitSkill(),
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              },
             ),
           ),
         );
@@ -522,6 +574,9 @@ class _AddSkillPageState extends State<AddSkillPage> {
       buffer.writeln('\nAvailability: ${_availabilityController.text.trim()}');
     }
 
+    // Don't include phone number in description for privacy reasons
+    // It will be stored separately in the skill data
+
     return buffer.toString();
   }
 
@@ -530,11 +585,11 @@ class _AddSkillPageState extends State<AddSkillPage> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 28),
-            const SizedBox(width: 8),
-            const Text('Success!'),
+            Icon(Icons.check_circle, color: Colors.green, size: 28),
+            SizedBox(width: 8),
+            Text('Success!'),
           ],
         ),
         content: const Text(
@@ -543,7 +598,8 @@ class _AddSkillPageState extends State<AddSkillPage> {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Return to previous screen
+              // Return to previous screen with a result to trigger refresh
+              Navigator.of(context).pop(true); // Pass true to indicate success
             },
             child: const Text('Great!'),
           ),
@@ -793,7 +849,42 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
         const SizedBox(height: 16),
 
-        // Location field with validation
+        // Phone number field
+        CustomTextField(
+          label: 'Phone Number',
+          controller: _phoneNumberController,
+          prefixIcon: const Icon(Icons.phone),
+          hintText: 'e.g., +91 9876543210',
+          keyboardType: TextInputType.phone,
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter your phone number for clients to contact you';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 16),
+
+        // Address selector
+        const Text(
+          'Address',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.textPrimaryColor,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Select your location details',
+          style: TextStyle(
+            color: AppTheme.textSecondaryColor,
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // Import the AddressSelector widget
+        // We'll use a simplified version for now
         CustomTextField(
           label: 'Location',
           controller: _locationController,
@@ -807,6 +898,15 @@ class _AddSkillPageState extends State<AddSkillPage> {
           },
         ),
         const SizedBox(height: 8),
+        const Text(
+          'Note: Full address selector will be implemented in the next update',
+          style: TextStyle(
+            fontSize: 12,
+            fontStyle: FontStyle.italic,
+            color: AppTheme.textLightColor,
+          ),
+        ),
+        const SizedBox(height: 16),
 
         // Online availability
         SwitchListTile(

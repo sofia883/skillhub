@@ -12,6 +12,10 @@ class SkillModel extends Skill {
     required String imageUrl,
     required DateTime createdAt,
     bool isFeatured = false,
+    String? location,
+    String? userId,
+    String? phoneNumber,
+    Map<String, dynamic>? address,
   }) : super(
           id: id,
           title: title,
@@ -23,9 +27,19 @@ class SkillModel extends Skill {
           imageUrl: imageUrl,
           createdAt: createdAt,
           isFeatured: isFeatured,
+          location: location,
+          userId: userId,
+          phoneNumber: phoneNumber,
+          address: address,
         );
 
   factory SkillModel.fromJson(Map<String, dynamic> json) {
+    // Handle address field if present
+    Map<String, dynamic>? addressData;
+    if (json.containsKey('address') && json['address'] != null) {
+      addressData = Map<String, dynamic>.from(json['address'] as Map);
+    }
+
     return SkillModel(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -37,11 +51,15 @@ class SkillModel extends Skill {
       imageUrl: json['image_url'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       isFeatured: json['is_featured'] as bool? ?? false,
+      location: json['location'] as String?,
+      userId: json['user_id'] as String?,
+      phoneNumber: json['phone_number'] as String?,
+      address: addressData,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final Map<String, dynamic> data = {
       'id': id,
       'title': title,
       'description': description,
@@ -53,6 +71,14 @@ class SkillModel extends Skill {
       'created_at': createdAt.toIso8601String(),
       'is_featured': isFeatured,
     };
+
+    // Add optional fields if they exist
+    if (location != null) data['location'] = location;
+    if (userId != null) data['user_id'] = userId;
+    if (phoneNumber != null) data['phone_number'] = phoneNumber;
+    if (address != null) data['address'] = address;
+
+    return data;
   }
 
   factory SkillModel.fromEntity(Skill skill) {
@@ -67,6 +93,10 @@ class SkillModel extends Skill {
       imageUrl: skill.imageUrl,
       createdAt: skill.createdAt,
       isFeatured: skill.isFeatured,
+      location: skill.location,
+      userId: skill.userId,
+      phoneNumber: skill.phoneNumber,
+      address: skill.address,
     );
   }
 }
