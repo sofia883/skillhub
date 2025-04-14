@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -14,8 +15,8 @@ import '../../../profile/presentation/widgets/enhanced_location_selector.dart';
 import '../widgets/price_input.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:intl_phone_field/intl_phone_field.dart';
 import 'package:country_state_city_picker/country_state_city_picker.dart';
+import 'package:intl_phone_field/intl_phone_field.dart';
 
 class AddSkillPage extends StatefulWidget {
   const AddSkillPage({super.key});
@@ -30,6 +31,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
   final _locationController = TextEditingController();
+  final _houseNoController = TextEditingController();
   final _availabilityController = TextEditingController();
   final _skillRepository = SkillRepository();
 
@@ -187,14 +189,14 @@ class _AddSkillPageState extends State<AddSkillPage> {
     'amount': '',
   };
 
-  // Phone number
-  String? _completePhoneNumber;
-  bool _isValidPhone = false;
-
   // Location
   String? _selectedCountry;
   String? _selectedState;
   String? _selectedCity;
+
+  // Phone number
+  String? _completePhoneNumber;
+  bool _isValidPhone = false;
 
   @override
   void initState() {
@@ -214,6 +216,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
     _descriptionController.dispose();
     _priceController.dispose();
     _locationController.dispose();
+    _houseNoController.dispose();
     _availabilityController.dispose();
     super.dispose();
   }
@@ -479,14 +482,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
         }
       }
 
-      // Format the location string
-      final location = [
-        _locationController.text.trim(),
-        _selectedCity,
-        _selectedState,
-        _selectedCountry,
-      ].where((e) => e != null && e.isNotEmpty).join(', ');
-
       // Create skill data
       final skillData = {
         'id': skillId,
@@ -505,10 +500,17 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'imageUrls': imageUrls,
         'createdAt': FieldValue.serverTimestamp(),
         'isFeatured': false,
-        'location': location,
+        'location': _locationController.text.trim(),
+        'houseNo': _houseNoController.text.trim(),
         'isOnline': _isOnline,
         'availability': _availabilityController.text.trim(),
-        'address': _addressData,
+        'address': {
+          'street': _locationController.text.trim(),
+          'houseNo': _houseNoController.text.trim(),
+          'country': _selectedCountry,
+          'state': _selectedState,
+          'city': _selectedCity,
+        },
         'userId':
             currentUser?.uid ?? 'unknown_user', // Important for security rules
         'providerId': currentUser?.uid ?? 'unknown_user',
@@ -517,7 +519,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'country': _selectedCountry,
         'state': _selectedState,
         'city': _selectedCity,
-        'phone': _completePhoneNumber,
+        if (_completePhoneNumber != null &&
+            _completePhoneNumber!.isNotEmpty &&
+            _isValidPhone)
+          'phone': _completePhoneNumber,
       };
 
       debugPrint('Attempting to save skill: ${skillData['title']}');
@@ -632,6 +637,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
       _descriptionController.clear();
       _priceController.clear();
       _locationController.clear();
+      _houseNoController.clear();
       _availabilityController.clear();
       _selectedCategory = 'Other';
       _selectedSubcategory = '';
@@ -655,23 +661,19 @@ class _AddSkillPageState extends State<AddSkillPage> {
           ],
         ),
         content: const Text(
-            'Your skill has been added successfully. It will now be visible to potential clients.'),
+            'Your skill has been added successfully. You will be redirected to your profile to view it.'),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(context).pop(); // Close dialog
-
-              // Check if we're in the main navigation or opened as a separate page
-              if (Navigator.of(context).canPop()) {
-                // Return to previous screen with a result to trigger refresh
-                Navigator.of(context)
-                    .pop(true); // Pass true to indicate success
-              } else {
-                // We're in the main navigation, so just reset the form
-                _resetForm();
-              }
+              // Navigate to profile page with skills tab
+              Navigator.pushReplacementNamed(
+                context,
+                '/profile',
+                arguments: {'initialTab': 1}, // Assuming skills tab is index 1
+              );
             },
-            child: const Text('Great!'),
+            child: const Text('View My Skills'),
           ),
         ],
       ),
@@ -702,223 +704,113 @@ class _AddSkillPageState extends State<AddSkillPage> {
       children: [
         Scaffold(
           appBar: AppBar(
-            title: const Text('Add New Skill'),
+            title: const Text('Add Your Skill'),
+            elevation: 0,
           ),
-          body: SingleChildScrollView(
-            child: Form(
-              key: _formKey,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title field
-                    CustomTextField(
-                      label: 'Skill Title',
-                      controller: _titleController,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter a title';
-                        }
-                        return null;
-                      },
-                      prefixIcon: const Icon(Icons.title),
-                    ),
-                    const SizedBox(height: 16),
+          body: Stack(
+            children: [
+              Stepper(
+                type: StepperType.horizontal,
+                currentStep: _currentStep,
+                onStepTapped: (step) => setState(() => _currentStep = step),
+                onStepContinue: () {
+                  final isLastStep = _currentStep == _steps.length - 1;
+                  if (isLastStep) {
+                    // For the last step, only check if images are successfully uploaded
+                    _submitSkill();
+                  } else {
+                    // Validate the current step before proceeding
+                    bool isValid = true;
+                    String errorMessage = '';
 
-                    // Category dropdown
-                    DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: 'Category',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.category),
-                      ),
-                      value: _selectedCategory,
-                      items: categories.map((category) {
-                        return DropdownMenuItem(
-                          value: category,
-                          child: Text(category),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedCategory = value!;
-                          _updateSubcategories(value);
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please select a category';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
+                    // Check validation based on current step
+                    if (_currentStep == 0) {
+                      // Validate basic info fields
+                      if (_titleController.text.isEmpty) {
+                        isValid = false;
+                        errorMessage = 'Please enter a skill title';
+                      } else if (_priceController.text.isEmpty &&
+                          _priceData['type'] != 'Contact for Pricing') {
+                        isValid = false;
+                        errorMessage = 'Please enter a price';
+                      } else if (_priceData['type'] != 'Contact for Pricing' &&
+                          double.tryParse(_priceController.text) == null) {
+                        isValid = false;
+                        errorMessage = 'Please enter a valid price';
+                      }
+                    } else if (_currentStep == 1) {
+                      // Validate details fields
+                      if (_descriptionController.text.isEmpty) {
+                        isValid = false;
+                        errorMessage = 'Please enter a description';
+                      } else if (_locationController.text.isEmpty) {
+                        isValid = false;
+                        errorMessage = 'Please enter your location';
+                      } else if (_availabilityController.text.isEmpty) {
+                        isValid = false;
+                        errorMessage = 'Please specify your availability';
+                      }
+                    }
 
-                    // Subcategory dropdown
-                    if (subcategories.containsKey(_selectedCategory) &&
-                        subcategories[_selectedCategory]!.isNotEmpty) ...[
-                      DropdownButtonFormField<String>(
-                        decoration: const InputDecoration(
-                          labelText: 'Specialty',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.topic),
-                        ),
-                        value: _selectedSubcategory.isEmpty
-                            ? subcategories[_selectedCategory]![0]
-                            : _selectedSubcategory,
-                        items: subcategories[_selectedCategory]!
-                            .map((subcategory) {
-                          return DropdownMenuItem(
-                            value: subcategory,
-                            child: Text(subcategory),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              _selectedSubcategory = value;
-                            });
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-
-                    // Price field with pricing model
-                    PriceInput(
-                      controller: _priceController,
-                      onCurrencyAndTypeChanged: (currency, type) {
-                        _updatePriceData(currency, type);
-                      },
-                    ),
-
-                    // Phone Field
-                    IntlPhoneField(
-                      decoration: const InputDecoration(
-                        labelText: 'Phone Number',
-                        border: OutlineInputBorder(),
-                        counterText: '',
-                      ),
-                      initialCountryCode: 'IN',
-                      flagsButtonPadding: const EdgeInsets.all(8),
-                      showDropdownIcon: true,
-                      dropdownIconPosition: IconPosition.trailing,
-                      invalidNumberMessage: 'Invalid phone number',
-                      onChanged: (phone) {
-                        setState(() {
-                          _completePhoneNumber = phone.completeNumber;
-                          _isValidPhone = phone.isValidNumber();
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null || !value.isValidNumber()) {
-                          return 'Please enter a valid phone number';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Country State City Picker
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(
-                        children: [
-                          SelectState(
-                            onCountryChanged: (value) async {
-                              setState(() {
-                                _selectedCountry = value;
-                                _selectedState = null;
-                                _selectedCity = null;
-                              });
+                    if (!isValid) {
+                      // Show error message with amber color instead of red
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(errorMessage),
+                          backgroundColor: Colors.amber[700],
+                          duration: const Duration(seconds: 3),
+                          action: SnackBarAction(
+                            label: 'OK',
+                            textColor: Colors.white,
+                            onPressed: () {
+                              ScaffoldMessenger.of(context)
+                                  .hideCurrentSnackBar();
                             },
-                            onStateChanged: (value) async {
-                              setState(() {
-                                _selectedState = value;
-                                _selectedCity = null;
-                              });
-                            },
-                            onCityChanged: (value) {
-                              setState(() {
-                                _selectedCity = value;
-                              });
-                            },
-                            style: const TextStyle(
-                              color: Colors.black87,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Address Field
-                    TextFormField(
-                      controller: _locationController,
-                      decoration: const InputDecoration(
-                        labelText: 'Street Address',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.home_outlined),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your street address';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Save Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _submitSkill,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).primaryColor,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 12),
-                          elevation: 2,
                         ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white),
+                      );
+                    } else {
+                      setState(() => _currentStep += 1);
+                    }
+                  }
+                },
+                onStepCancel: _currentStep == 0
+                    ? null // Disable on first step
+                    : () => setState(() => _currentStep -= 1),
+                controlsBuilder: (context, details) {
+                  final isLastStep = _currentStep == _steps.length - 1;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 24.0),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            if (_currentStep != 0)
+                              Expanded(
+                                child: CustomButton(
+                                  text: 'Back',
+                                  onPressed: details.onStepCancel!,
+                                  isOutlined: true,
                                 ),
-                              )
-                            : const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.add_circle_outline, size: 24),
-                                  SizedBox(width: 12),
-                                  Text(
-                                    'Add Skill',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
                               ),
-                      ),
+                            if (_currentStep != 0) const SizedBox(width: 12),
+                            Expanded(
+                              child: CustomButton(
+                                text: isLastStep ? 'Submit' : 'Next',
+                                onPressed: details.onStepContinue!,
+                                isLoading: _isLoading || _isUploadingImages,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
+                  );
+                },
+                steps: _steps,
               ),
-            ),
+            ],
           ),
         ),
         if (_isLoading)
@@ -1043,6 +935,41 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
         const SizedBox(height: 16),
 
+        // Phone Field
+        IntlPhoneField(
+          decoration: const InputDecoration(
+            labelText: 'Phone Number (Optional)',
+            border: OutlineInputBorder(),
+            counterText: '',
+            helperText:
+                'Leave empty if you don\'t want to provide a phone number',
+          ),
+          initialCountryCode: 'IN',
+          flagsButtonPadding: const EdgeInsets.all(8),
+          showDropdownIcon: true,
+          dropdownIconPosition: IconPosition.trailing,
+          invalidNumberMessage: 'Invalid phone number',
+          onChanged: (phone) {
+            setState(() {
+              _completePhoneNumber = phone.completeNumber;
+              _isValidPhone = phone.isValidNumber();
+            });
+          },
+          onCountryChanged: (country) {
+            debugPrint('Country changed to: ${country.name}');
+          },
+          validator: (value) {
+            if (value == null || value.number.isEmpty) {
+              _isValidPhone = false;
+              _completePhoneNumber = null;
+              return null;
+            }
+            _isValidPhone = value.isValidNumber();
+            return _isValidPhone ? null : 'Invalid phone number';
+          },
+        ),
+        const SizedBox(height: 16),
+
         // Address selector
         const Text(
           'Address',
@@ -1061,28 +988,69 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
         const SizedBox(height: 8),
 
-        // Import the AddressSelector widget
-        // We'll use a simplified version for now
-        CustomTextField(
-          label: 'Location',
-          controller: _locationController,
-          prefixIcon: const Icon(Icons.location_on),
-          hintText: 'e.g., Mumbai, Maharashtra, India',
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter your location for better matching with nearby users';
-            }
-            return null;
-          },
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Note: Full address selector will be implemented in the next update',
-          style: TextStyle(
-            fontSize: 12,
-            fontStyle: FontStyle.italic,
-            color: AppTheme.textLightColor,
+        // Country State City Picker
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Column(
+            children: [
+              SelectState(
+                onCountryChanged: (value) async {
+                  setState(() {
+                    _selectedCountry = value;
+                    _selectedState = null;
+                    _selectedCity = null;
+                  });
+                },
+                onStateChanged: (value) async {
+                  setState(() {
+                    _selectedState = value;
+                    _selectedCity = null;
+                  });
+                },
+                onCityChanged: (value) {
+                  setState(() {
+                    _selectedCity = value;
+                  });
+                },
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
+        ),
+        const SizedBox(height: 16),
+
+        // Location field
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: CustomTextField(
+                label: 'Location',
+                controller: _locationController,
+                prefixIcon: const Icon(Icons.location_on),
+                hintText: 'e.g., Street name, Area',
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter your location';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: CustomTextField(
+                label: 'House No. (Optional)',
+                controller: _houseNoController,
+                hintText: 'e.g., A-123',
+                prefixIcon: const Icon(Icons.home),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
 
@@ -1101,17 +1069,71 @@ class _AddSkillPageState extends State<AddSkillPage> {
         const SizedBox(height: 8),
 
         // Availability field
-        CustomTextField(
-          label: 'Availability',
-          controller: _availabilityController,
-          prefixIcon: const Icon(Icons.access_time),
-          hintText: 'e.g., Weekdays after 5 PM, Weekends',
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please specify your availability';
-            }
-            return null;
-          },
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Availability',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textPrimaryColor,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('All Time'),
+                  selected: _availabilityController.text == 'All Time',
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() {
+                        _availabilityController.text = 'All Time';
+                      });
+                    }
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Weekends Only'),
+                  selected: _availabilityController.text == 'Weekends Only',
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() {
+                        _availabilityController.text = 'Weekends Only';
+                      });
+                    }
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Weekdays Only'),
+                  selected: _availabilityController.text == 'Weekdays Only',
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() {
+                        _availabilityController.text = 'Weekdays Only';
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            CustomTextField(
+              label: 'Custom Availability',
+              controller: _availabilityController,
+              prefixIcon: const Icon(Icons.access_time),
+              hintText: 'Or specify custom timing...',
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please specify your availability';
+                }
+                return null;
+              },
+            ),
+          ],
         ),
       ],
     );
