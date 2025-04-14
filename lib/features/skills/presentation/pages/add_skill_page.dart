@@ -14,6 +14,8 @@ import '../../../profile/presentation/widgets/enhanced_location_selector.dart';
 import '../widgets/price_input.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl_phone_field/intl_phone_field.dart';
+import 'package:country_state_city_picker/country_state_city_picker.dart';
 
 class AddSkillPage extends StatefulWidget {
   const AddSkillPage({super.key});
@@ -184,6 +186,15 @@ class _AddSkillPageState extends State<AddSkillPage> {
     'type': 'Fixed',
     'amount': '',
   };
+
+  // Phone number
+  String? _completePhoneNumber;
+  bool _isValidPhone = false;
+
+  // Location
+  String? _selectedCountry;
+  String? _selectedState;
+  String? _selectedCity;
 
   @override
   void initState() {
@@ -468,6 +479,14 @@ class _AddSkillPageState extends State<AddSkillPage> {
         }
       }
 
+      // Format the location string
+      final location = [
+        _locationController.text.trim(),
+        _selectedCity,
+        _selectedState,
+        _selectedCountry,
+      ].where((e) => e != null && e.isNotEmpty).join(', ');
+
       // Create skill data
       final skillData = {
         'id': skillId,
@@ -486,7 +505,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'imageUrls': imageUrls,
         'createdAt': FieldValue.serverTimestamp(),
         'isFeatured': false,
-        'location': _locationController.text.trim(),
+        'location': location,
         'isOnline': _isOnline,
         'availability': _availabilityController.text.trim(),
         'address': _addressData,
@@ -495,6 +514,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'providerId': currentUser?.uid ?? 'unknown_user',
         'provider':
             currentUser?.displayName ?? currentUser?.email ?? 'Anonymous User',
+        'country': _selectedCountry,
+        'state': _selectedState,
+        'city': _selectedCity,
+        'phone': _completePhoneNumber,
       };
 
       debugPrint('Attempting to save skill: ${skillData['title']}');
@@ -675,116 +698,242 @@ class _AddSkillPageState extends State<AddSkillPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Your Skill'),
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: Stepper(
-            type: StepperType.horizontal,
-            currentStep: _currentStep,
-            onStepTapped: (step) => setState(() => _currentStep = step),
-            onStepContinue: () {
-              final isLastStep = _currentStep == _steps.length - 1;
-              if (isLastStep) {
-                // For the last step, only check if images are successfully uploaded
-                _submitSkill();
-              } else {
-                // Validate the current step before proceeding
-                bool isValid = true;
-                String errorMessage = '';
+    return Stack(
+      children: [
+        Scaffold(
+          appBar: AppBar(
+            title: const Text('Add New Skill'),
+          ),
+          body: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title field
+                    CustomTextField(
+                      label: 'Skill Title',
+                      controller: _titleController,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter a title';
+                        }
+                        return null;
+                      },
+                      prefixIcon: const Icon(Icons.title),
+                    ),
+                    const SizedBox(height: 16),
 
-                // Check validation based on current step
-                if (_currentStep == 0) {
-                  // Validate basic info fields
-                  if (_titleController.text.isEmpty) {
-                    isValid = false;
-                    errorMessage = 'Please enter a skill title';
-                  } else if (_priceController.text.isEmpty &&
-                      _priceData['type'] != 'Contact for Pricing') {
-                    isValid = false;
-                    errorMessage = 'Please enter a price';
-                  } else if (_priceData['type'] != 'Contact for Pricing' &&
-                      double.tryParse(_priceController.text) == null) {
-                    isValid = false;
-                    errorMessage = 'Please enter a valid price';
-                  }
-                } else if (_currentStep == 1) {
-                  // Validate details fields
-                  if (_descriptionController.text.isEmpty) {
-                    isValid = false;
-                    errorMessage = 'Please enter a description';
-                  } else if (_locationController.text.isEmpty) {
-                    isValid = false;
-                    errorMessage = 'Please enter your location';
-                  } else if (_availabilityController.text.isEmpty) {
-                    isValid = false;
-                    errorMessage = 'Please specify your availability';
-                  }
-                }
+                    // Category dropdown
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.category),
+                      ),
+                      value: _selectedCategory,
+                      items: categories.map((category) {
+                        return DropdownMenuItem(
+                          value: category,
+                          child: Text(category),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedCategory = value!;
+                          _updateSubcategories(value);
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please select a category';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
 
-                if (!isValid) {
-                  // Show error message with amber color instead of red
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(errorMessage),
-                      backgroundColor: Colors.amber[700],
-                      duration: const Duration(seconds: 3),
-                      action: SnackBarAction(
-                        label: 'OK',
-                        textColor: Colors.white,
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    // Subcategory dropdown
+                    if (subcategories.containsKey(_selectedCategory) &&
+                        subcategories[_selectedCategory]!.isNotEmpty) ...[
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Specialty',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.topic),
+                        ),
+                        value: _selectedSubcategory.isEmpty
+                            ? subcategories[_selectedCategory]![0]
+                            : _selectedSubcategory,
+                        items: subcategories[_selectedCategory]!
+                            .map((subcategory) {
+                          return DropdownMenuItem(
+                            value: subcategory,
+                            child: Text(subcategory),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() {
+                              _selectedSubcategory = value;
+                            });
+                          }
                         },
                       ),
-                    ),
-                  );
-                } else {
-                  setState(() => _currentStep += 1);
-                }
-              }
-            },
-            onStepCancel: _currentStep == 0
-                ? null // Disable on first step
-                : () => setState(() => _currentStep -= 1),
-            controlsBuilder: (context, details) {
-              final isLastStep = _currentStep == _steps.length - 1;
+                      const SizedBox(height: 16),
+                    ],
 
-              return Padding(
-                padding: const EdgeInsets.only(top: 24.0),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        if (_currentStep != 0)
-                          Expanded(
-                            child: CustomButton(
-                              text: 'Back',
-                              onPressed: details.onStepCancel!,
-                              isOutlined: true,
+                    // Price field with pricing model
+                    PriceInput(
+                      controller: _priceController,
+                      onCurrencyAndTypeChanged: (currency, type) {
+                        _updatePriceData(currency, type);
+                      },
+                    ),
+
+                    // Phone Field
+                    IntlPhoneField(
+                      decoration: const InputDecoration(
+                        labelText: 'Phone Number',
+                        border: OutlineInputBorder(),
+                        counterText: '',
+                      ),
+                      initialCountryCode: 'IN',
+                      flagsButtonPadding: const EdgeInsets.all(8),
+                      showDropdownIcon: true,
+                      dropdownIconPosition: IconPosition.trailing,
+                      invalidNumberMessage: 'Invalid phone number',
+                      onChanged: (phone) {
+                        setState(() {
+                          _completePhoneNumber = phone.completeNumber;
+                          _isValidPhone = phone.isValidNumber();
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null || !value.isValidNumber()) {
+                          return 'Please enter a valid phone number';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Country State City Picker
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Column(
+                        children: [
+                          SelectState(
+                            onCountryChanged: (value) async {
+                              setState(() {
+                                _selectedCountry = value;
+                                _selectedState = null;
+                                _selectedCity = null;
+                              });
+                            },
+                            onStateChanged: (value) async {
+                              setState(() {
+                                _selectedState = value;
+                                _selectedCity = null;
+                              });
+                            },
+                            onCityChanged: (value) {
+                              setState(() {
+                                _selectedCity = value;
+                              });
+                            },
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                        if (_currentStep != 0) const SizedBox(width: 12),
-                        Expanded(
-                          child: CustomButton(
-                            text: isLastStep ? 'Submit' : 'Next',
-                            onPressed: details.onStepContinue!,
-                            isLoading: _isLoading || _isUploadingImages,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    const SizedBox(height: 16),
+
+                    // Address Field
+                    TextFormField(
+                      controller: _locationController,
+                      decoration: const InputDecoration(
+                        labelText: 'Street Address',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.home_outlined),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your street address';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Save Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _submitSkill,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
+                          elevation: 2,
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
+                                ),
+                              )
+                            : const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.add_circle_outline, size: 24),
+                                  SizedBox(width: 12),
+                                  Text(
+                                    'Add Skill',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                   ],
                 ),
-              );
-            },
-            steps: _steps,
+              ),
+            ),
           ),
         ),
-      ),
+        if (_isLoading)
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+              child: Container(
+                color: Colors.black.withOpacity(0.3),
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
