@@ -7,7 +7,7 @@ import '../widgets/category_chip.dart';
 import '../../domain/entities/skill.dart';
 import '../../data/repositories/skill_repository.dart';
 import '../../../../features/skills/presentation/pages/skill_detail_page.dart';
-import '../../../../features/home/presentation/widgets/skill_grid.dart';
+import '../../../../features/home/presentation/widgets/skill_list.dart';
 import '../../../../features/search/presentation/widgets/search_results_list.dart';
 import '../../../../features/search/presentation/widgets/search_suggestions.dart';
 
@@ -270,53 +270,14 @@ class HomeScreenState extends State<HomeScreen> {
       return; // Prevent multiple concurrent loads
     }
 
-    // First check if we have skills in local cache
-    final cachedSkills = _skillRepository.getAllSkills();
-
-    // If we have cached skills, update UI immediately
-    if (cachedSkills.isNotEmpty) {
-      // Remove duplicates by ID
-      final Map<String, Skill> uniqueSkills = {};
-      for (final skill in cachedSkills) {
-        uniqueSkills[skill.id] = skill;
-      }
-      final uniqueCachedSkills = uniqueSkills.values.toList();
-
-      setState(() {
-        _filteredSkills = _selectedCategory == 'All'
-            ? uniqueCachedSkills
-            : uniqueCachedSkills
-                .where((skill) => skill.category == _selectedCategory)
-                .toList();
-        _isLoading = false; // Hide loading indicator immediately
-      });
-      debugPrint('Displayed ${_filteredSkills.length} skills from local cache');
-
-      // If we're not forcing a refresh, we can stop here
-      if (!forceRefresh) {
-        return;
-      }
-    } else {
-      // Only show loading indicator if we don't have cached skills
-      setState(() {
-        _isLoading = true;
-      });
-
-      // Set a short maximum timer for loading indicator (500ms)
-      Timer(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
-      });
-    }
-
     try {
       // Always force refresh from Firestore to get the latest data
       debugPrint('Loading skills with forceRefresh: $forceRefresh');
-      final skills =
-          await _skillRepository.getSkills(forceRefresh: forceRefresh);
+      final skills = await _skillRepository.getSkills(
+          forceRefresh: forceRefresh,
+          excludeCurrentUser:
+              true // Add this parameter to exclude current user's listings
+          );
 
       if (mounted) {
         // Remove duplicates by ID
@@ -1945,7 +1906,7 @@ class HomeScreenState extends State<HomeScreen> {
                                         )
                                       : _filteredSkills.isEmpty
                                           ? _buildEmptyState()
-                                          : SkillGrid(
+                                          : SkillList(
                                               skills: _filteredSkills,
                                               onSkillTap: _onSkillTap,
                                             ),

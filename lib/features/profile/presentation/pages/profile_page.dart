@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../../../core/constants/app_constants.dart';
-import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/custom_button.dart';
-import '../../../../features/auth/data/repositories/user_repository.dart';
-import '../../../../features/auth/presentation/pages/login_screen.dart';
-import '../../../../features/home/data/repositories/skill_repository.dart';
-import '../../../../features/home/domain/entities/skill.dart';
-import '../../../../features/home/presentation/widgets/skill_card.dart';
-import '../../../../features/skills/presentation/pages/add_skill_page.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
+import 'package:skill_hub/core/theme/app_theme.dart';
+import 'package:skill_hub/features/auth/data/repositories/user_repository.dart';
+import 'package:skill_hub/features/auth/presentation/pages/login_screen.dart';
+import 'package:skill_hub/features/home/data/repositories/skill_repository.dart';
+import 'package:skill_hub/features/home/domain/entities/skill.dart';
+import 'package:skill_hub/features/profile/presentation/pages/edit_profile_page.dart';
+import 'package:skill_hub/features/skills/presentation/pages/add_skill_page.dart';
+import 'package:skill_hub/features/skills/presentation/pages/edit_skill_page.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({Key? key}) : super(key: key);
+  const ProfilePage({super.key});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -20,14 +20,18 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage>
     with SingleTickerProviderStateMixin {
-  final _userRepository = UserRepository();
+  final _formKey = GlobalKey<FormState>();
   final _skillRepository = SkillRepository();
   final _firestore = FirebaseFirestore.instance;
-  late TabController _tabController;
+  final _userRepository = UserRepository();
   bool _isLoading = false;
 
+  // Tab controller
+  late TabController _tabController;
+
   // User skills
-  List<Skill> _userSkills = [];
+  List<Map<String, dynamic>> _skills = [];
+  StreamSubscription<List<Map<String, dynamic>>>? _skillsSubscription;
 
   // User data
   String _userName = 'User';
@@ -42,13 +46,39 @@ class _ProfilePageState extends State<ProfilePage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _loadUserData();
-    _loadUserSkills();
+    _initializeSkillsStream();
+  }
+
+  void _initializeSkillsStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      // Cancel existing subscription if any
+      _skillsSubscription?.cancel();
+
+      // Create new subscription
+      _skillsSubscription =
+          _skillRepository.getUserSkills(user.uid).listen((skills) {
+        if (mounted) {
+          setState(() {
+            _skills = skills;
+          });
+        }
+      }, onError: (error) {
+        debugPrint('Error loading skills: $error');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error loading skills: $error')),
+          );
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _skillsSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -59,72 +89,38 @@ class _ProfilePageState extends State<ProfilePage>
     });
 
     try {
-      // Get current user
-      final user = _userRepository.getCurrentUser();
-
+      final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        // Basic info from Auth
+        // Load basic info from Firebase Auth
         setState(() {
-          _userEmail = user.email ?? 'No email';
-
-          // Extract name from email as fallback
-          if (user.displayName != null && user.displayName!.isNotEmpty) {
-            _userName = user.displayName!;
-          } else if (user.email != null) {
-            _userName = user.email!
-                .split('@')[0]
-                .split('.')
-                .map((s) => s.isNotEmpty
-                    ? '${s[0].toUpperCase()}${s.substring(1)}'
-                    : '')
-                .join(' ');
-          }
-
-          // Use photo URL if available
-          if (user.photoURL != null && user.photoURL!.isNotEmpty) {
-            _userProfilePic = user.photoURL!;
-          }
+          _userName = user.displayName ?? 'User';
+          _userEmail = user.email ?? '';
+          _userProfilePic = user.photoURL ?? 'https://via.placeholder.com/150';
         });
 
-        // Try to get additional data from Firestore
+        // Load additional info from Firestore
         try {
-          final userDoc =
-              await _firestore.collection('users').doc(user.uid).get();
-          if (userDoc.exists) {
-            final userData = userDoc.data();
-            if (userData != null) {
-              setState(() {
-                _userBio = userData['bio'] ?? _userBio;
-                _userLocation = userData['location'] ?? _userLocation;
-                _userPhone = userData['phone'] ?? _userPhone;
-                _userRating = (userData['rating'] ?? 0).toDouble();
-                _totalJobsDone = userData['jobsDone'] ?? 0;
-              });
-            }
+          final userData = await _userRepository.getUserData(user.uid);
+          if (userData != null) {
+            setState(() {
+              _userName = userData['displayName'] ?? _userName;
+              _userBio = userData['bio'] ?? _userBio;
+              _userLocation = userData['location'] ?? _userLocation;
+              _userPhone = userData['phone'] ?? _userPhone;
+              _userRating = (userData['rating'] ?? 0.0).toDouble();
+              _totalJobsDone = userData['jobsDone'] ?? 0;
+            });
           }
         } catch (e) {
-          print('Error fetching additional user data: $e');
+          debugPrint('Error loading user data from Firestore: $e');
         }
       }
     } catch (e) {
-      print('Error loading user data: $e');
+      debugPrint('Error loading user data: $e');
     } finally {
       setState(() {
         _isLoading = false;
       });
-    }
-  }
-
-  Future<void> _loadUserSkills() async {
-    try {
-      final skills = await _skillRepository.getUserSkills();
-      if (mounted) {
-        setState(() {
-          _userSkills = skills;
-        });
-      }
-    } catch (e) {
-      print('Error loading user skills: $e');
     }
   }
 
@@ -137,567 +133,551 @@ class _ProfilePageState extends State<ProfilePage>
             (route) => false);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error signing out: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error signing out: $e')),
+        );
+      }
     }
   }
 
-  Future<void> _editProfile() async {
-    // This would navigate to an edit profile page in a real app
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Edit profile coming soon!')),
+  Future<void> _refreshProfile() async {
+    await _loadUserData();
+    _initializeSkillsStream();
+  }
+
+  void _editProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final userData = await _userRepository.getUserData(user.uid);
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EditProfilePage(
+            initialName: _userName,
+            initialBio: _userBio,
+            initialLocation: _userLocation,
+            initialProfilePic: _userProfilePic,
+            initialCountry: userData?['country'],
+            initialState: userData?['state'],
+            initialCity: userData?['city'],
+            initialHouseNo: userData?['houseNo'],
+          ),
+        ),
+      ).then((_) => _refreshProfile());
+    }
+  }
+
+  void _showDeleteAccountDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text(
+            'Are you sure you want to delete your account? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteAccount();
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 
-  Future<void> _refreshProfile() async {
-    await Future.wait([
-      _loadUserData(),
-      _loadUserSkills(),
-    ]);
+  Future<void> _deleteAccount() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Delete user data from Firestore
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await _firestore.collection('users').doc(user.uid).delete();
+      }
+
+      // Delete user account
+      await _userRepository.deleteAccount();
+
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false);
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting account: $e')),
+        );
+      }
+    }
+  }
+
+  void _showDeleteSkillDialog(Skill skill) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Skill'),
+        content: Text(
+            'Are you sure you want to delete "${skill.title}"? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteSkill(skill.id);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteSkill(String skillId) async {
+    try {
+      final success = await _skillRepository.deleteSkill(skillId);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Skill deleted successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting skill: $e')),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+    final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _refreshProfile,
-        child: NestedScrollView(
-          headerSliverBuilder: (context, innerBoxIsScrolled) => [
-            SliverAppBar(
-              expandedHeight: 240,
-              pinned: true,
-              flexibleSpace: FlexibleSpaceBar(
-                background: Container(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          'My Profile',
+          style: TextStyle(
+            color: Theme.of(context).primaryColor,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.edit, color: Theme.of(context).primaryColor),
+            onPressed: _editProfile,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Profile Header
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        AppTheme.primaryColor,
-                        AppTheme.primaryColor.withOpacity(0.8),
-                      ],
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).primaryColor,
+                      width: 2,
                     ),
                   ),
-                  child: SafeArea(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Hero(
-                          tag: 'profilePic',
-                          child: CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.white,
-                            backgroundImage: NetworkImage(_userProfilePic),
-                            onBackgroundImageError: (_, __) {},
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _userName,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _userEmail,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.white70,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.star, color: Colors.amber, size: 20),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$_userRating',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundColor: Colors.white,
+                    backgroundImage:
+                        _userProfilePic != 'https://via.placeholder.com/150'
+                            ? NetworkImage(_userProfilePic)
+                            : null,
+                    child: _userProfilePic == 'https://via.placeholder.com/150'
+                        ? Text(
+                            _userName[0].toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).primaryColor,
                             ),
-                            const SizedBox(width: 16),
-                            const Icon(Icons.work_outline,
-                                color: Colors.white70, size: 18),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$_totalJobsDone jobs',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          )
+                        : null,
                   ),
                 ),
-              ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: _editProfile,
-                  tooltip: 'Edit Profile',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.logout),
-                  onPressed: _signOut,
-                  tooltip: 'Sign Out',
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _userName,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _userEmail,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-            SliverPersistentHeader(
-              delegate: _SliverAppBarDelegate(
-                TabBar(
-                  controller: _tabController,
-                  tabs: const [
-                    Tab(text: 'About'),
-                    Tab(text: 'My Skills'),
-                    Tab(text: 'Settings'),
-                  ],
-                  labelColor: AppTheme.primaryColor,
-                  unselectedLabelColor: AppTheme.textSecondaryColor,
-                  indicatorColor: AppTheme.primaryColor,
+          ),
+
+          // Tab Bar
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.grey[300]!,
+                  width: 1,
                 ),
               ),
-              pinned: true,
             ),
-          ],
-          body: TabBarView(
-            controller: _tabController,
-            children: [
-              // About tab
-              SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Bio',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _userBio,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppTheme.textSecondaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Contact Information',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildInfoItem(Icons.email, 'Email', _userEmail),
-                    _buildInfoItem(Icons.phone, 'Phone', _userPhone),
-                    _buildInfoItem(
-                        Icons.location_on, 'Location', _userLocation),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Account Statistics',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildStatCard(),
-                  ],
-                ),
-              ),
-
-              // My Skills tab
-              _buildMySkillsTab(),
-
-              // Settings tab
-              _buildSettingsTab(),
-            ],
+            child: TabBar(
+              controller: _tabController,
+              labelColor: Theme.of(context).primaryColor,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: Theme.of(context).primaryColor,
+              tabs: const [
+                Tab(text: 'Information'),
+                Tab(text: 'My Skills'),
+              ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
 
-  Widget _buildInfoItem(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          Icon(icon, color: AppTheme.textSecondaryColor),
-          const SizedBox(width: 16),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textSecondaryColor,
+          // Tab Bar View
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // Information Tab
+                ListView(
+                  children: _buildProfileOptions(),
                 ),
-              ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textPrimaryColor,
+
+                // Skills Tab
+                RefreshIndicator(
+                  onRefresh: _refreshProfile,
+                  child: user != null
+                      ? Builder(
+                          builder: (context) {
+                            if (_isLoading) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+
+                            return Column(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.all(20.0),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'My Skills (${_skills.length})',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                      ),
+                                      ElevatedButton.icon(
+                                        onPressed: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  const AddSkillPage(),
+                                            ),
+                                          ).then(
+                                              (_) => _initializeSkillsStream());
+                                        },
+                                        icon: const Icon(Icons.add),
+                                        label: const Text('Add Skill'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              Theme.of(context).primaryColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _skills.isEmpty
+                                      ? const Center(
+                                          child: Text('No skills added yet'),
+                                        )
+                                      : ListView.separated(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 20),
+                                          itemCount: _skills.length,
+                                          separatorBuilder: (context, index) =>
+                                              const Divider(height: 1),
+                                          itemBuilder: (context, index) {
+                                            final skill = _skills[index];
+                                            return ListTile(
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 8),
+                                              leading: Container(
+                                                width: 50,
+                                                height: 50,
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  image: DecorationImage(
+                                                    image: NetworkImage(
+                                                      skill['imageUrl'] ??
+                                                          'https://via.placeholder.com/50',
+                                                    ),
+                                                    fit: BoxFit.cover,
+                                                  ),
+                                                ),
+                                              ),
+                                              title: Text(
+                                                skill['title'] ?? '',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              subtitle: Text(
+                                                skill['description'] ?? '',
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              trailing: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  IconButton(
+                                                    icon:
+                                                        const Icon(Icons.edit),
+                                                    onPressed: () {
+                                                      Navigator.push(
+                                                        context,
+                                                        MaterialPageRoute(
+                                                          builder: (context) =>
+                                                              EditSkillPage(
+                                                            skill: Skill(
+                                                              id: skill['id'],
+                                                              title: skill[
+                                                                  'title'],
+                                                              description: skill[
+                                                                  'description'],
+                                                              category: skill[
+                                                                  'category'],
+                                                              price: double.parse(
+                                                                  skill['price']
+                                                                      .toString()),
+                                                              rating: skill[
+                                                                          'rating']
+                                                                      ?.toDouble() ??
+                                                                  0.0,
+                                                              provider: skill[
+                                                                      'provider'] ??
+                                                                  user.displayName ??
+                                                                  'Unknown Provider',
+                                                              imageUrl: skill[
+                                                                      'imageUrl'] ??
+                                                                  'https://via.placeholder.com/150',
+                                                              createdAt: skill[
+                                                                          'createdAt']
+                                                                      ?.toDate() ??
+                                                                  DateTime
+                                                                      .now(),
+                                                              userId: user.uid,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                        Icons.delete,
+                                                        color: Colors.red),
+                                                    onPressed: () =>
+                                                        _showDeleteSkillDialog(
+                                                            Skill(
+                                                      id: skill['id'],
+                                                      title: skill['title'],
+                                                      description:
+                                                          skill['description'],
+                                                      category:
+                                                          skill['category'],
+                                                      price: double.parse(
+                                                          skill['price']
+                                                              .toString()),
+                                                      rating: skill['rating']
+                                                              ?.toDouble() ??
+                                                          0.0,
+                                                      provider: skill[
+                                                              'provider'] ??
+                                                          user.displayName ??
+                                                          'Unknown Provider',
+                                                      imageUrl: skill[
+                                                              'imageUrl'] ??
+                                                          'https://via.placeholder.com/150',
+                                                      createdAt:
+                                                          skill['createdAt']
+                                                                  ?.toDate() ??
+                                                              DateTime.now(),
+                                                      userId: user.uid,
+                                                    )),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                ),
+                              ],
+                            );
+                          },
+                        )
+                      : const Center(
+                          child: Text('Please log in to view your skills'),
+                        ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStatCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, 2),
-          ),
-        ],
+  List<Widget> _buildProfileOptions() {
+    return [
+      const Divider(height: 1),
+      ListTile(
+        leading:
+            Icon(Icons.person_outline, color: Theme.of(context).primaryColor),
+        title: const Text('Name'),
+        subtitle: Text(_userName),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _editProfile,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildStatItem('Skills', _userSkills.length.toString()),
-          _buildStatItem('Jobs Done', _totalJobsDone.toString()),
-          _buildStatItem('Rating', '$_userRating/5.0'),
-        ],
+      const Divider(height: 1),
+      ListTile(
+        leading:
+            Icon(Icons.email_outlined, color: Theme.of(context).primaryColor),
+        title: const Text('Email'),
+        subtitle: Text(_userEmail),
       ),
-    );
-  }
-
-  Widget _buildStatItem(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.primaryColor,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppTheme.textSecondaryColor,
-          ),
+      const Divider(height: 1),
+      ListTile(
+        leading:
+            Icon(Icons.phone_outlined, color: Theme.of(context).primaryColor),
+        title: const Text('Phone Number'),
+        subtitle: Text(_userPhone),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _editProfile,
+      ),
+      const Divider(height: 1),
+      ListTile(
+        leading: Icon(Icons.location_on_outlined,
+            color: Theme.of(context).primaryColor),
+        title: const Text('Location'),
+        subtitle: Text(_userLocation),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _editProfile,
+      ),
+      if (_userBio != 'No bio available') ...[
+        const Divider(height: 1),
+        ListTile(
+          leading:
+              Icon(Icons.info_outline, color: Theme.of(context).primaryColor),
+          title: const Text('About Me'),
+          subtitle: Text(_userBio),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _editProfile,
         ),
       ],
-    );
-  }
-
-  Widget _buildMySkillsTab() {
-    return _userSkills.isEmpty
-        ? Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.work_off_outlined,
-                  size: 80,
-                  color: Colors.grey[300],
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'You haven\'t added any skills yet',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimaryColor,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Add your skills to get hired',
-                  style: TextStyle(
-                    color: AppTheme.textSecondaryColor,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                CustomButton(
-                  text: 'Add Skill',
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AddSkillPage(),
-                      ),
-                    ).then((_) {
-                      // Refresh skills when returning
-                      _loadUserSkills();
-                    });
-                  },
-                ),
-              ],
-            ),
-          )
-        : ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _userSkills.length,
-            itemBuilder: (context, index) {
-              final skill = _userSkills[index];
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: SkillCard(
-                  skill: skill,
-                  onTap: () {
-                    // Would navigate to edit skill page
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text('Edit ${skill.title} coming soon!')),
-                    );
-                  },
-                ),
-              );
-            },
-          );
-  }
-
-  Widget _buildSettingsTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Account Settings',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimaryColor,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildSettingItem(
-            Icons.person,
-            'Edit Profile',
-            'Update your personal information',
-            () => _editProfile(),
-          ),
-          _buildSettingItem(
-            Icons.notifications,
-            'Notifications',
-            'Manage your notification preferences',
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Notification settings coming soon!')),
-              );
-            },
-          ),
-          _buildSettingItem(
-            Icons.lock,
-            'Privacy & Security',
-            'Manage your privacy and security settings',
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Privacy settings coming soon!')),
-              );
-            },
-          ),
-          _buildSettingItem(
-            Icons.payment,
-            'Payment Methods',
-            'Manage your payment methods',
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Payment settings coming soon!')),
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'App Settings',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimaryColor,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildSettingItem(
-            Icons.language,
-            'Language',
-            'Change app language',
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Language settings coming soon!')),
-              );
-            },
-          ),
-          _buildSettingItem(
-            Icons.dark_mode,
-            'Theme',
-            'Change app theme',
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Theme settings coming soon!')),
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'About',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimaryColor,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildSettingItem(
-            Icons.help,
-            'Help & Support',
-            'Get help with using the app',
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Help center coming soon!')),
-              );
-            },
-          ),
-          _buildSettingItem(
-            Icons.policy,
-            'Terms & Policies',
-            'View our terms and policies',
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Terms page coming soon!')),
-              );
-            },
-          ),
-          _buildSettingItem(
-            Icons.info,
-            'About Skill Hub',
-            'Learn more about Skill Hub',
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('About page coming soon!')),
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          CustomButton(
-            text: 'Sign Out',
-            onPressed: _signOut,
-            isOutlined: true,
-          ),
-        ],
+      const Divider(height: 1),
+      ListTile(
+        leading:
+            Icon(Icons.star_outline, color: Theme.of(context).primaryColor),
+        title: const Text('Rating'),
+        subtitle: Text('${_userRating.toStringAsFixed(1)} / 5.0'),
       ),
-    );
-  }
-
-  Widget _buildSettingItem(
-      IconData icon, String title, String subtitle, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: AppTheme.primaryColor, size: 20),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: AppTheme.textPrimaryColor,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondaryColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios,
-              color: AppTheme.textSecondaryColor,
-              size: 16,
-            ),
-          ],
+      const Divider(height: 1),
+      ListTile(
+        leading:
+            Icon(Icons.work_outline, color: Theme.of(context).primaryColor),
+        title: const Text('Jobs Completed'),
+        subtitle: Text('$_totalJobsDone jobs'),
+      ),
+      const Divider(height: 1),
+      // Settings section
+      const SizedBox(height: 16),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Text(
+          'Settings',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
-    );
-  }
-}
-
-// This delegate is used for the tab bar to stay at the top when scrolling
-class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
-  final TabBar _tabBar;
-
-  _SliverAppBarDelegate(this._tabBar);
-
-  @override
-  Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: Colors.white,
-      child: _tabBar,
-    );
-  }
-
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-
-  @override
-  bool shouldRebuild(covariant _SliverAppBarDelegate oldDelegate) {
-    return false;
+      ListTile(
+        leading: Icon(Icons.delete_outline, color: Colors.red),
+        title: const Text('Clear Cache'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          // Handle clear cache
+        },
+      ),
+      const Divider(height: 1),
+      ListTile(
+        leading: Icon(Icons.history, color: Theme.of(context).primaryColor),
+        title: const Text('Clear History'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          // Handle clear history
+        },
+      ),
+      const Divider(height: 1),
+      ListTile(
+        leading: Icon(Icons.logout, color: Colors.red),
+        title: const Text('Sign Out'),
+        onTap: _signOut,
+      ),
+      const Divider(height: 1),
+    ];
   }
 }

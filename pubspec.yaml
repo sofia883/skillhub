@@ -37,6 +37,7 @@ dependencies:
   cupertino_icons: ^1.0.6
   firebase_core: ^3.4.0
   firebase_auth: ^5.2.0
+  firebase_storage: ^12.0.0
   flutter_bloc: ^9.1.0
   equatable: ^2.0.7
   dartz: ^0.10.1
@@ -49,10 +50,21 @@ dependencies:
   geocoding: ^3.0.0
   flutter_typeahead: ^5.2.0
   flutter_staggered_grid_view: ^0.7.0
-  connectivity_plus: ^3.0.3
+  connectivity_plus: ^5.0.2
   shared_preferences: ^2.2.2
   url_launcher: ^6.2.5
   intl: ^0.19.0
+  curved_navigation_bar: ^1.0.3
+  http: ^1.2.2
+  geolocator: ^13.0.4
+  email_validator: ^2.1.17
+  country_picker: ^2.0.25
+  phone_number: ^2.1.0
+  intl_phone_number_input: ^0.7.3
+  country_code_picker: ^3.3.0
+  intl_phone_field: ^3.2.0
+  country_state_city_picker: ^1.2.8
+  dropdown_search: ^5.0.6
 
 dev_dependencies:
   flutter_test:

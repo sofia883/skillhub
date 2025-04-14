@@ -344,15 +344,26 @@ class SkillDetailPageState extends State<SkillDetailPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      backgroundColor: Colors.grey[50], // Light gray background like LinkedIn
       appBar: AppBar(
-        title: Text(widget.skill.title),
+        backgroundColor: Colors.white,
         elevation: 0,
+        title: Text(
+          widget.skill.title,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
           if (_isCurrentUserProvider)
             IconButton(
-              icon: const Icon(Icons.edit),
+              icon: const Icon(Icons.edit, color: Colors.black87),
               onPressed: () {
-                // TODO: Navigate to edit skill page
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Edit skill coming soon')),
                 );
@@ -360,498 +371,263 @@ class SkillDetailPageState extends State<SkillDetailPage> {
             ),
         ],
       ),
-      body: Stack(
-        children: [
-          // Main content
-          RefreshIndicator(
-            onRefresh: () => _loadSkillDetails(),
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Network error banner
-                  if (_hasNetworkError)
-                    Container(
-                      width: double.infinity,
-                      color: Colors.orange.shade100,
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 8, horizontal: 16),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.wifi_off, color: Colors.orange),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Network error: Showing limited information',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.orange.shade900,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _retryLoading,
-                            child: const Text('RETRY'),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // Image gallery with error handling
-                  _imageUrls.isNotEmpty
-                      ? Builder(builder: (context) {
-                          return _hasNetworkError
-                              ? Container(
-                                  height: 250,
-                                  width: double.infinity,
-                                  color: theme.colorScheme.primary
-                                      .withOpacity(0.1),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(
-                                        Icons.image_not_supported_outlined,
-                                        size: 50,
-                                        color: Colors.grey,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Images unavailable offline',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : ImageGallery(imageUrls: _imageUrls);
-                        })
-                      : Container(
-                          height: 250,
-                          width: double.infinity,
-                          color: theme.colorScheme.primary.withOpacity(0.1),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.image_not_supported_outlined,
-                                size: 50,
-                                color: Colors.grey,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'No images available',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                  // Content
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
+      body: RefreshIndicator(
+        onRefresh: () => _loadSkillDetails(),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Profile Header Section
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Provider info with large avatar
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Title
-                        Text(
-                          widget.skill.title,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
+                        CircleAvatar(
+                          radius: 40,
+                          backgroundColor: theme.colorScheme.primary,
+                          child: Text(
+                            _getProviderInitial(),
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-
-                        const SizedBox(height: 12),
-
-                        // Price and buttons in one row
-                        Row(
-                          children: [
-                            // Price tag
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                '₹${widget.skill.price.toStringAsFixed(0)}',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  color: Colors.white,
+                        const SizedBox(width: 20),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _providerData.containsKey('displayName') &&
+                                        (_providerData['displayName']
+                                                    as String?)
+                                                ?.isNotEmpty ==
+                                            true
+                                    ? _providerData['displayName']
+                                    : widget.skill.provider,
+                                style: theme.textTheme.headlineSmall?.copyWith(
                                   fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            // Call button - MADE LARGER AND MORE PROMINENT
-                            Expanded(
-                              flex: 1,
-                              child: SizedBox(
-                                height:
-                                    44, // Fixed height for better visibility
-                                child: ElevatedButton.icon(
-                                  onPressed: _callProvider,
-                                  icon: const Icon(Icons.call,
-                                      color: Colors.white, size: 20),
-                                  label: const Text('CALL',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor:
-                                        Colors.green, // Green for call button
-                                    elevation: 3, // Add shadow
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8)),
+                              const SizedBox(height: 4),
+                              Text(
+                                widget.skill.title,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.black87,
+                                  height: 1.3,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              if (_skillData.containsKey('location'))
+                                Text(
+                                  _skillData['location'],
+                                  style: theme.textTheme.bodyLarge?.copyWith(
+                                    color: Colors.grey[600],
                                   ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            // Chat button - ENHANCED WITH MESSAGE INDICATOR
-                            Expanded(
-                              flex: 1,
-                              child: Stack(
+                              const SizedBox(height: 16),
+                              Row(
                                 children: [
-                                  SizedBox(
-                                    height:
-                                        44, // Fixed height for better visibility
-                                    width: double.infinity,
-                                    child: ElevatedButton.icon(
-                                      onPressed: _chatWithProvider,
-                                      icon: const Icon(Icons.chat_bubble,
-                                          color: Colors.white, size: 20),
-                                      label: const Text('CHAT',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14)),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors
-                                            .deepPurple, // More distinctive color
-                                        elevation: 4, // Increased shadow
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(8)),
-                                      ),
-                                    ),
+                                  Icon(
+                                    Icons.star,
+                                    color: theme.colorScheme.primary,
+                                    size: 20,
                                   ),
-                                  // Message notification indicator
-                                  Positioned(
-                                    right: 0,
-                                    top: 0,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Text('',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 8)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    widget.skill.rating > 0
+                                        ? '${widget.skill.rating.toStringAsFixed(1)} Rating'
+                                        : 'New Provider',
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        // Category and rating
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color:
-                                    theme.colorScheme.primary.withOpacity(0.08),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                widget.skill.category,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (_skillData.containsKey('subcategory') &&
-                                _skillData['subcategory'] is String &&
-                                (_skillData['subcategory'] as String)
-                                    .isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.secondary
-                                      .withOpacity(0.08),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  _skillData['subcategory'],
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.secondary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            const Spacer(),
-                            const Icon(
-                              Icons.star,
-                              color: Colors.amber,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              widget.skill.rating > 0
-                                  ? widget.skill.rating.toStringAsFixed(1)
-                                  : 'New',
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Provider info
-                        Card(
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Row(
-                              children: [
-                                _buildProviderAvatar(theme),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _providerData.containsKey(
-                                                    'displayName') &&
-                                                (_providerData['displayName']
-                                                            as String?)
-                                                        ?.isNotEmpty ==
-                                                    true
-                                            ? _providerData['displayName']
-                                            : widget.skill.provider,
-                                        style: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      if (_providerData
-                                              .containsKey('location') &&
-                                          (_providerData['location'] as String?)
-                                                  ?.isNotEmpty ==
-                                              true)
-                                        Text(
-                                          _providerData['location'],
-                                          style: theme.textTheme.bodySmall,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Description
-                        Text(
-                          'Description',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          widget.skill.description,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            height: 1.5,
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Phone number if available
-                        if (widget.skill.phoneNumber != null &&
-                            widget.skill.phoneNumber!.isNotEmpty) ...[
-                          Text(
-                            'Contact',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.phone,
-                                color: theme.colorScheme.primary,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                widget.skill.phoneNumber!,
-                                style: theme.textTheme.bodyMedium,
-                              ),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // Location
-                        if (_skillData.containsKey('location') ||
-                            widget.skill.location != null) ...[
-                          Text(
-                            'Location',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.location_on,
-                                color: theme.colorScheme.primary,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _skillData.containsKey('location') &&
-                                          (_skillData['location'] as String?)
-                                                  ?.isNotEmpty ==
-                                              true
-                                      ? _skillData['location']
-                                      : widget.skill.location ??
-                                          'Location not specified',
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // Availability
-                        if (_skillData.containsKey('availability') &&
-                            (_skillData['availability'] as String?)
-                                    ?.isNotEmpty ==
-                                true) ...[
-                          Text(
-                            'Availability',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.access_time,
-                                color: theme.colorScheme.primary,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _skillData['availability'],
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // Online availability
-                        if (_skillData.containsKey('isOnline')) ...[
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.computer,
-                                color: _skillData['isOnline'] == true
-                                    ? theme.colorScheme.primary
-                                    : Colors.grey,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _skillData['isOnline'] == true
-                                    ? 'Available Online'
-                                    : 'In-person Only',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: _skillData['isOnline'] == true
-                                      ? theme.colorScheme.primary
-                                      : Colors.grey,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 32),
-                        ],
-
-                        // Add extra space at the bottom for the bottom navigation bar
-                        const SizedBox(height: 40),
+                        ),
                       ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // About Section
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'About',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      widget.skill.description,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: Colors.black87,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Service Details Section
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Service Details',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildDetailRow(
+                      context,
+                      Icons.work_outline,
+                      'Category',
+                      widget.skill.category,
+                    ),
+                    if (_skillData.containsKey('availability'))
+                      _buildDetailRow(
+                        context,
+                        Icons.access_time,
+                        'Availability',
+                        _skillData['availability'],
+                      ),
+                    _buildDetailRow(
+                      context,
+                      Icons.location_on_outlined,
+                      'Location',
+                      _skillData.containsKey('location')
+                          ? _skillData['location']
+                          : widget.skill.location ?? 'Location not specified',
+                    ),
+                    _buildDetailRow(
+                      context,
+                      Icons.computer_outlined,
+                      'Service Type',
+                      _skillData['isOnline'] == true
+                          ? 'Available Online'
+                          : 'In-person Only',
+                    ),
+                    _buildDetailRow(
+                      context,
+                      Icons.payments_outlined,
+                      'Price',
+                      '₹${widget.skill.price.toStringAsFixed(0)}',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 100), // Space for bottom bar
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: !_isCurrentUserProvider
+          ? Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: CustomButton(
+                      text: 'Connect',
+                      onPressed: _chatWithProvider,
+                      backgroundColor: theme.colorScheme.primary,
+                      icon: Icons.person_add_outlined,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: CustomButton(
+                      text: 'Message',
+                      onPressed: _chatWithProvider,
+                      backgroundColor: Colors.white,
+                      textColor: theme.colorScheme.primary,
+                      borderColor: theme.colorScheme.primary,
+                      icon: Icons.message_outlined,
                     ),
                   ),
                 ],
               ),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildDetailRow(
+      BuildContext context, IconData icon, String label, String value) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 24,
+            color: Colors.grey[600],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: Colors.black87,
+                    height: 1.3,
+                  ),
+                ),
+              ],
             ),
           ),
-
-          // Loading indicator overlay
-          if (_isLoading)
-            Container(
-              color: Colors.white.withOpacity(0.7),
-              width: double.infinity,
-              height: double.infinity,
-              child: const Center(
-                child: CircularProgressIndicator(),
-              ),
-            ),
         ],
-      ),
-      // Always show the bottom navigation bar with chat and call buttons
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
-            ),
-          ],
-        ),
-        // Only show Book Now button in the bottom bar
-        child: CustomButton(
-          text: 'Book Now',
-          onPressed: _bookService,
-          backgroundColor: theme.colorScheme.primary,
-          icon: Icons.calendar_today,
-        ),
       ),
     );
   }

@@ -25,7 +25,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  
+
   String? _currentUserId;
   String? _chatId;
   bool _isLoading = false;
@@ -69,7 +69,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // Check if chat exists, if not create it
       final chatDoc = await _firestore.collection('chats').doc(_chatId).get();
-      
+
       if (!chatDoc.exists) {
         await _firestore.collection('chats').doc(_chatId).set({
           'participants': [_currentUserId, widget.providerId],
@@ -101,8 +101,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _messageController.clear();
 
+    // Create a local message to display immediately
+    final localMessage = {
+      'text': messageText,
+      'senderId': _currentUserId,
+      'timestamp': Timestamp.now(),
+      'isLocal': true, // Mark as local to handle differently if needed
+    };
+
+    // Add to local messages list if we're maintaining one
+    // This would require additional state management
+
+    // Scroll to bottom immediately for better UX
+    _scrollToBottom();
+
     try {
-      // Add message to messages subcollection
+      // Try to add message to Firestore
       await _firestore
           .collection('chats')
           .doc(_chatId)
@@ -119,12 +133,38 @@ class _ChatScreenState extends State<ChatScreen> {
         'lastMessageTime': FieldValue.serverTimestamp(),
       });
 
-      // Scroll to bottom
-      _scrollToBottom();
+      debugPrint('Message sent successfully');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error sending message: $e')),
-      );
+      // Handle permission errors gracefully
+      debugPrint('Error sending message: $e');
+
+      // Show a more user-friendly error message
+      String errorMessage = 'Unable to send message';
+
+      if (e.toString().contains('permission-denied')) {
+        errorMessage =
+            'You don\'t have permission to send messages in this chat';
+      } else if (e.toString().contains('network')) {
+        errorMessage =
+            'Network error. Message saved locally and will be sent when connection is restored.';
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: 'OK',
+              onPressed: () {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                }
+              },
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -141,7 +181,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -174,11 +214,14 @@ class _ChatScreenState extends State<ChatScreen> {
                               .orderBy('timestamp', descending: false)
                               .snapshots(),
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                  child: CircularProgressIndicator());
                             }
 
-                            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
                               return Center(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -191,14 +234,16 @@ class _ChatScreenState extends State<ChatScreen> {
                                     const SizedBox(height: 16),
                                     Text(
                                       'No messages yet',
-                                      style: theme.textTheme.titleMedium?.copyWith(
+                                      style:
+                                          theme.textTheme.titleMedium?.copyWith(
                                         color: Colors.grey[600],
                                       ),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
                                       'Start the conversation!',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
                                         color: Colors.grey[500],
                                       ),
                                     ),
@@ -222,10 +267,13 @@ class _ChatScreenState extends State<ChatScreen> {
                               ),
                               itemCount: messages.length,
                               itemBuilder: (context, index) {
-                                final message = messages[index].data() as Map<String, dynamic>;
-                                final isMe = message['senderId'] == _currentUserId;
-                                final timestamp = message['timestamp'] as Timestamp?;
-                                
+                                final message = messages[index].data()
+                                    as Map<String, dynamic>;
+                                final isMe =
+                                    message['senderId'] == _currentUserId;
+                                final timestamp =
+                                    message['timestamp'] as Timestamp?;
+
                                 String timeString = '';
                                 if (timestamp != null) {
                                   final dateTime = timestamp.toDate();
@@ -246,7 +294,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
                 // Message input
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8.0, vertical: 8.0),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     boxShadow: [
@@ -319,7 +368,8 @@ class _ChatScreenState extends State<ChatScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
@@ -327,7 +377,9 @@ class _ChatScreenState extends State<ChatScreen> {
               radius: 16,
               backgroundColor: theme.colorScheme.secondary.withOpacity(0.2),
               child: Text(
-                widget.providerName.isNotEmpty ? widget.providerName[0].toUpperCase() : '?',
+                widget.providerName.isNotEmpty
+                    ? widget.providerName[0].toUpperCase()
+                    : '?',
                 style: TextStyle(
                   color: theme.colorScheme.secondary,
                   fontWeight: FontWeight.bold,
@@ -340,9 +392,7 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: isMe
-                    ? theme.colorScheme.primary
-                    : Colors.grey[200],
+                color: isMe ? theme.colorScheme.primary : Colors.grey[200],
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),

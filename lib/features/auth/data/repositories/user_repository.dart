@@ -1,9 +1,18 @@
+import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 class UserRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  Future<void> initialize() async {
+    // Initialize Firebase if needed
+    await Firebase.initializeApp();
+  }
 
   Future<User?> createUser({
     required String email,
@@ -64,6 +73,21 @@ class UserRepository {
     await _auth.signOut();
   }
 
+  Future<void> deleteAccount() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Delete user from Firebase Auth
+      await user.delete();
+    } catch (e) {
+      print('Error deleting account: $e');
+      rethrow;
+    }
+  }
+
   User? getCurrentUser() {
     return _auth.currentUser;
   }
@@ -101,5 +125,151 @@ class UserRepository {
   Future<User?> refreshUser() async {
     await _auth.currentUser?.reload();
     return _auth.currentUser;
+  }
+
+  // Get user data from Firestore
+  Future<Map<String, dynamic>?> getUserData(String userId) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        return userDoc.data();
+      }
+      return null;
+    } catch (e) {
+      print('Error getting user data: $e');
+      return null;
+    }
+  }
+
+  // Update user profile data in Firestore
+  Future<void> updateUserData(
+      String userId, Map<String, dynamic> userData) async {
+    try {
+      await _firestore.collection('users').doc(userId).update(userData);
+    } catch (e) {
+      print('Error updating user data: $e');
+      rethrow;
+    }
+  }
+
+  // Update user profile in both Auth and Firestore
+  Future<void> updateUserProfile({
+    required String displayName,
+    String? photoURL,
+    String? bio,
+    String? phone,
+    String? location,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not logged in');
+      }
+
+      // Update Auth profile
+      await user.updateDisplayName(displayName);
+      if (photoURL != null) {
+        await user.updatePhotoURL(photoURL);
+      }
+
+      // Prepare Firestore data
+      final userData = {
+        'displayName': displayName,
+      };
+
+      if (photoURL != null) userData['photoURL'] = photoURL;
+      if (bio != null) userData['bio'] = bio;
+      if (phone != null) userData['phone'] = phone;
+      if (location != null) userData['location'] = location;
+
+      // Update Firestore
+      await _firestore.collection('users').doc(user.uid).update(userData);
+
+      // Refresh user
+      await refreshUser();
+    } catch (e) {
+      print('Error updating user profile: $e');
+      rethrow;
+    }
+  }
+
+  // Delete user account and all associated data
+  Future<bool> deleteUserAccount() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not logged in');
+      }
+
+      final userId = user.uid;
+
+      // 1. Delete user skills from Firestore
+      try {
+        final skillsSnapshot = await _firestore
+            .collection('skills')
+            .where('userId', isEqualTo: userId)
+            .get();
+
+        // Batch delete all skills
+        final batch = _firestore.batch();
+        for (var doc in skillsSnapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      } catch (e) {
+        print('Error deleting user skills: $e');
+        // Continue with deletion process
+      }
+
+      // 2. Delete user data from Firestore
+      try {
+        await _firestore.collection('users').doc(userId).delete();
+      } catch (e) {
+        print('Error deleting user data: $e');
+        // Continue with deletion process
+      }
+
+      // 3. Delete the user authentication account
+      await user.delete();
+
+      return true;
+    } catch (e) {
+      print('Error deleting user account: $e');
+      rethrow;
+    }
+  }
+
+  // Upload profile picture to ImgBB and return the URL
+  Future<String> uploadProfilePicture(File image) async {
+    const String imgbbApiKey = "0c58b6d9015713886842dab7d4825812";
+
+    try {
+      // Convert image to base64
+      final bytes = await image.readAsBytes();
+      final base64Image = base64Encode(bytes);
+
+      // Upload to ImgBB
+      final response = await http.post(
+        Uri.parse('https://api.imgbb.com/1/upload'),
+        body: {
+          'key': imgbbApiKey,
+          'image': base64Image,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+        if (jsonResponse['success'] == true) {
+          return jsonResponse['data']['display_url'];
+        }
+        throw Exception('Image upload failed: ${jsonResponse['error']}');
+      }
+
+      throw Exception(
+          'Image upload failed with status code: ${response.statusCode}');
+    } catch (e) {
+      print('Error uploading profile picture: $e');
+      rethrow;
+    }
   }
 }

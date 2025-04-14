@@ -10,6 +10,10 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/custom_button.dart';
 import '../../../../core/widgets/custom_text_field.dart';
 import '../../../../features/home/data/repositories/skill_repository.dart';
+import '../../../profile/presentation/widgets/enhanced_location_selector.dart';
+import '../widgets/price_input.dart';
+import 'package:country_code_picker/country_code_picker.dart';
+import 'package:geolocator/geolocator.dart';
 
 class AddSkillPage extends StatefulWidget {
   const AddSkillPage({super.key});
@@ -25,13 +29,14 @@ class _AddSkillPageState extends State<AddSkillPage> {
   final _priceController = TextEditingController();
   final _locationController = TextEditingController();
   final _availabilityController = TextEditingController();
-  final _phoneNumberController = TextEditingController();
   final _skillRepository = SkillRepository();
 
   // Address data
   Map<String, dynamic>? _addressData;
 
   String _selectedCategory = 'Other';
+  String _selectedSubcategory = '';
+  String _selectedPriceType = 'Fixed';
   bool _isOnline = false;
   bool _isLoading = false;
   bool _isUploadingImages = false;
@@ -167,13 +172,27 @@ class _AddSkillPageState extends State<AddSkillPage> {
     ],
   };
 
-  String _selectedSubcategory = '';
+  // Add new variables for phone and location
+  String _selectedCountryCode = '+91';
+  bool _isLoadingLocation = false;
+  String? _currentAddress;
+  Position? _currentPosition;
+
+  // Add this variable to store price data
+  Map<String, dynamic> _priceData = {
+    'currency': '₹',
+    'type': 'Fixed',
+    'amount': '',
+  };
 
   @override
   void initState() {
     super.initState();
     // Initialize default subcategory
-    _updateSubcategories(_selectedCategory);
+    if (subcategories.containsKey(_selectedCategory) &&
+        subcategories[_selectedCategory]!.isNotEmpty) {
+      _selectedSubcategory = subcategories[_selectedCategory]![0];
+    }
     // Request permissions on startup
     _requestPermissions();
   }
@@ -185,17 +204,18 @@ class _AddSkillPageState extends State<AddSkillPage> {
     _priceController.dispose();
     _locationController.dispose();
     _availabilityController.dispose();
-    _phoneNumberController.dispose();
     super.dispose();
   }
 
   void _updateSubcategories(String category) {
-    if (subcategories.containsKey(category) &&
-        subcategories[category]!.isNotEmpty) {
-      setState(() {
+    setState(() {
+      if (subcategories.containsKey(category) &&
+          subcategories[category]!.isNotEmpty) {
         _selectedSubcategory = subcategories[category]![0];
-      });
-    }
+      } else {
+        _selectedSubcategory = ''; // Set to empty if no subcategories
+      }
+    });
   }
 
   Future<void> _requestPermissions() async {
@@ -384,7 +404,8 @@ class _AddSkillPageState extends State<AddSkillPage> {
         _descriptionController.text.isEmpty ||
         _locationController.text.isEmpty ||
         _availabilityController.text.isEmpty ||
-        _priceController.text.isEmpty) {
+        (_priceController.text.isEmpty &&
+            _selectedPriceType != 'Contact for Pricing')) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content:
@@ -454,7 +475,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'description': _generateDescription(),
         'category': _selectedCategory,
         'subcategory': _selectedSubcategory,
-        'price': price,
+        'price': _selectedPriceType == 'Contact for Pricing'
+            ? 0.0
+            : (double.tryParse(_priceController.text.trim()) ?? 0.0),
+        'priceType': _selectedPriceType,
         'rating': 0.0, // New skills start with no rating
         'imageUrl': imageUrls.isNotEmpty
             ? imageUrls.first
@@ -465,7 +489,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
         'location': _locationController.text.trim(),
         'isOnline': _isOnline,
         'availability': _availabilityController.text.trim(),
-        'phoneNumber': _phoneNumberController.text.trim(),
         'address': _addressData,
         'userId':
             currentUser?.uid ?? 'unknown_user', // Important for security rules
@@ -580,6 +603,22 @@ class _AddSkillPageState extends State<AddSkillPage> {
     return buffer.toString();
   }
 
+  void _resetForm() {
+    setState(() {
+      _titleController.clear();
+      _descriptionController.clear();
+      _priceController.clear();
+      _locationController.clear();
+      _availabilityController.clear();
+      _selectedCategory = 'Other';
+      _selectedSubcategory = '';
+      _isOnline = false;
+      _selectedImages.clear();
+      _currentStep = 0;
+      _addressData = null;
+    });
+  }
+
   void _showSuccessDialog() {
     showDialog(
       context: context,
@@ -598,8 +637,16 @@ class _AddSkillPageState extends State<AddSkillPage> {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop(); // Close dialog
-              // Return to previous screen with a result to trigger refresh
-              Navigator.of(context).pop(true); // Pass true to indicate success
+
+              // Check if we're in the main navigation or opened as a separate page
+              if (Navigator.of(context).canPop()) {
+                // Return to previous screen with a result to trigger refresh
+                Navigator.of(context)
+                    .pop(true); // Pass true to indicate success
+              } else {
+                // We're in the main navigation, so just reset the form
+                _resetForm();
+              }
             },
             child: const Text('Great!'),
           ),
@@ -656,10 +703,12 @@ class _AddSkillPageState extends State<AddSkillPage> {
                   if (_titleController.text.isEmpty) {
                     isValid = false;
                     errorMessage = 'Please enter a skill title';
-                  } else if (_priceController.text.isEmpty) {
+                  } else if (_priceController.text.isEmpty &&
+                      _priceData['type'] != 'Contact for Pricing') {
                     isValid = false;
                     errorMessage = 'Please enter a price';
-                  } else if (double.tryParse(_priceController.text) == null) {
+                  } else if (_priceData['type'] != 'Contact for Pricing' &&
+                      double.tryParse(_priceController.text) == null) {
                     isValid = false;
                     errorMessage = 'Please enter a valid price';
                   }
@@ -787,14 +836,17 @@ class _AddSkillPageState extends State<AddSkillPage> {
         const SizedBox(height: 16),
 
         // Subcategory dropdown
-        if (subcategories.containsKey(_selectedCategory)) ...[
+        if (subcategories.containsKey(_selectedCategory) &&
+            subcategories[_selectedCategory]!.isNotEmpty) ...[
           DropdownButtonFormField<String>(
             decoration: const InputDecoration(
               labelText: 'Specialty',
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.topic),
             ),
-            value: _selectedSubcategory,
+            value: _selectedSubcategory.isEmpty
+                ? subcategories[_selectedCategory]![0]
+                : _selectedSubcategory,
             items: subcategories[_selectedCategory]!.map((subcategory) {
               return DropdownMenuItem(
                 value: subcategory,
@@ -802,29 +854,22 @@ class _AddSkillPageState extends State<AddSkillPage> {
               );
             }).toList(),
             onChanged: (value) {
-              setState(() {
-                _selectedSubcategory = value!;
-              });
+              if (value != null) {
+                setState(() {
+                  _selectedSubcategory = value;
+                });
+              }
             },
           ),
           const SizedBox(height: 16),
         ],
 
-        // Price field
-        CustomTextField(
-          label: 'Price per hour (USD)',
+        // Price field with pricing model
+        PriceInput(
           controller: _priceController,
-          keyboardType: TextInputType.number,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter a price';
-            }
-            if (double.tryParse(value) == null) {
-              return 'Please enter a valid number';
-            }
-            return null;
+          onCurrencyAndTypeChanged: (currency, type) {
+            _updatePriceData(currency, type);
           },
-          prefixIcon: const Icon(Icons.attach_money),
         ),
       ],
     );
@@ -846,22 +891,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
             return null;
           },
           prefixIcon: const Icon(Icons.description),
-        ),
-        const SizedBox(height: 16),
-
-        // Phone number field
-        CustomTextField(
-          label: 'Phone Number',
-          controller: _phoneNumberController,
-          prefixIcon: const Icon(Icons.phone),
-          hintText: 'e.g., +91 9876543210',
-          keyboardType: TextInputType.phone,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter your phone number for clients to contact you';
-            }
-            return null;
-          },
         ),
         const SizedBox(height: 16),
 
@@ -944,21 +973,22 @@ class _AddSkillPageState extends State<AddSkillPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Add photos of your work',
+          'Showcase Your Expertise',
           style: TextStyle(
-            fontSize: 16,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
             color: AppTheme.textPrimaryColor,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         const Text(
-          'Show examples of your previous work to attract more clients',
+          'Share high-quality photos that demonstrate your skills and experience. Great photos can significantly increase your chances of getting hired!',
           style: TextStyle(
+            fontSize: 14,
             color: AppTheme.textSecondaryColor,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
 
         Row(
           children: [
@@ -966,9 +996,12 @@ class _AddSkillPageState extends State<AddSkillPage> {
               child: OutlinedButton.icon(
                 onPressed: _pickImages,
                 icon: const Icon(Icons.photo_library),
-                label: const Text('Gallery'),
+                label: const Text('Choose from Gallery'),
                 style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -977,85 +1010,191 @@ class _AddSkillPageState extends State<AddSkillPage> {
               child: OutlinedButton.icon(
                 onPressed: _takePicture,
                 icon: const Icon(Icons.camera_alt),
-                label: const Text('Camera'),
+                label: const Text('Take Photo'),
                 style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
 
         // Selected images preview
         if (_selectedImages.isEmpty) ...[
           Container(
-            height: 150,
+            height: 200,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey[300]!),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.add_photo_alternate,
-                    size: 48, color: Colors.grey[400]),
+                    size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'Add photos to showcase your work',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[600],
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Text(
-                  'No images selected',
-                  style: TextStyle(color: Colors.grey[600]),
+                  'Share your best work samples, completed projects,\nor before/after transformations',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
                 ),
               ],
             ),
           ),
         ] else ...[
-          SizedBox(
-            height: 150,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _selectedImages.length,
-              itemBuilder: (context, index) {
-                return Stack(
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      width: 150,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        image: DecorationImage(
-                          image: FileImage(_selectedImages[index]),
-                          fit: BoxFit.cover,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your Portfolio',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimaryColor,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 180,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _selectedImages.length + 1, // +1 for add button
+                  itemBuilder: (context, index) {
+                    if (index == _selectedImages.length) {
+                      // Add more photos button
+                      return Container(
+                        width: 150,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
                         ),
-                      ),
-                    ),
-                    Positioned(
-                      right: 8,
-                      top: 0,
-                      child: GestureDetector(
-                        onTap: () => _removeImage(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.close,
-                            size: 18,
-                            color: Colors.white,
+                        child: InkWell(
+                          onTap: _pickImages,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_circle_outline,
+                                  size: 40, color: Colors.grey[600]),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Add More',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
+                      );
+                    }
+                    return Stack(
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(right: 12),
+                          width: 150,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            image: DecorationImage(
+                              image: FileImage(_selectedImages[index]),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 12,
+                          top: 8,
+                          child: GestureDetector(
+                            onTap: () => _removeImage(index),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.close,
+                                size: 20,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ],
 
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.tips_and_updates, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text(
+                    'Tips for Great Photos',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '• Use high-quality, well-lit images\n'
+                '• Show different angles of your work\n'
+                '• Include before/after comparisons if applicable\n'
+                '• Highlight your unique skills and style',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.blue[800],
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 24),
         const Text(
           'By submitting, you agree to our Terms of Service and confirm that your skill complies with our Community Guidelines.',
@@ -1066,5 +1205,105 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
       ],
     );
+  }
+
+  // Add method to get current location
+  Future<void> _getCurrentLocation() async {
+    setState(() {
+      _isLoadingLocation = true;
+    });
+
+    try {
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location services are disabled')),
+          );
+        }
+        return;
+      }
+
+      // Check location permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Location permissions are denied')),
+            );
+          }
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permissions are permanently denied'),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition();
+      setState(() {
+        _currentPosition = position;
+      });
+
+      // Get address from coordinates
+      try {
+        final response = await http.get(Uri.parse(
+            'https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.latitude}&lon=${position.longitude}&zoom=18&addressdetails=1'));
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          setState(() {
+            _currentAddress = data['display_name'];
+            _locationController.text = _currentAddress ?? '';
+          });
+        }
+      } catch (e) {
+        debugPrint('Error getting address: $e');
+      }
+    } catch (e) {
+      debugPrint('Error getting location: $e');
+    } finally {
+      setState(() {
+        _isLoadingLocation = false;
+      });
+    }
+  }
+
+  // Add method to validate phone number
+  String? _validatePhoneNumber(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter a phone number';
+    }
+    // Basic validation for minimum length
+    if (value.length < 10) {
+      return 'Phone number is too short';
+    }
+    // You can add more specific validation based on country code
+    return null;
+  }
+
+  void _updatePriceData(String currency, String type) {
+    setState(() {
+      _priceData = {
+        'currency': currency,
+        'type': type,
+        'amount': type == 'Contact for Pricing' ? '' : _priceController.text,
+      };
+      _selectedPriceType = type;
+      if (type == 'Contact for Pricing') {
+        _priceController.clear();
+      }
+    });
   }
 }

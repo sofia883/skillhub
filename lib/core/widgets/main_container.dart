@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:skill_hub/features/home/presentation/pages/home_screen.dart';
 import 'package:skill_hub/features/profile/presentation/pages/profile_page.dart';
 import 'package:skill_hub/features/skills/presentation/pages/add_skill_page.dart';
 import 'package:skill_hub/features/settings/presentation/pages/settings_page.dart';
-import 'package:skill_hub/features/saved/presentation/pages/saved_skills_page.dart';
-import 'package:skill_hub/features/chat/presentation/pages/chat_list_screen.dart';
 import 'package:skill_hub/core/theme/app_theme.dart';
 
 class MainContainer extends StatefulWidget {
@@ -21,8 +20,7 @@ class _MainContainerState extends State<MainContainer> {
   final List<Widget> _screens = [
     const HomeScreen(),
     const ProfilePage(),
-    const ChatListScreen(),
-    const SavedSkillsPage(),
+    const AddSkillPage(),
     const SettingsPage(),
   ];
 
@@ -39,85 +37,37 @@ class _MainContainerState extends State<MainContainer> {
           index: _currentIndex,
           children: _screens,
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            // Navigate to Add Skill page
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const AddSkillPage()),
-            ).then((result) {
-              // If result is true, a skill was added successfully
-              if (result == true && _currentIndex == 0) {
-                // Create a new HomeScreen instance to force a complete refresh
-                setState(() {
-                  _screens[0] = HomeScreen(key: UniqueKey());
-                });
-
-                // Show a snackbar to indicate the skill was added
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Skill added successfully! Refreshing...'),
-                    duration: Duration(seconds: 2),
-                    backgroundColor: Colors.green,
-                  ),
-                );
+        bottomNavigationBar: CurvedNavigationBar(
+          backgroundColor: Colors.transparent,
+          color: AppTheme.primaryColor,
+          buttonBackgroundColor: AppTheme.primaryColor,
+          height: 60,
+          animationDuration: const Duration(milliseconds: 300),
+          animationCurve: Curves.easeInOut,
+          index: _currentIndex,
+          items: const [
+            Icon(Icons.home, color: Colors.white),
+            Icon(Icons.person, color: Colors.white),
+            Icon(Icons.add, color: Colors.white),
+            Icon(Icons.settings, color: Colors.white),
+          ],
+          onTap: (index) {
+            setState(() {
+              // If tapping on Add Skills tab and already on that tab, refresh it
+              if (index == 2 && _currentIndex == 2) {
+                // Create a new AddSkillPage instance to force a refresh
+                _screens[2] = AddSkillPage(key: UniqueKey());
               }
+
+              // If tapping on Home tab and already on that tab, refresh it
+              if (index == 0 && _currentIndex == 0) {
+                // Create a new HomeScreen instance to force a refresh
+                _screens[0] = HomeScreen(key: UniqueKey());
+              }
+
+              _currentIndex = index;
             });
           },
-          backgroundColor: AppTheme.primaryColor,
-          child: const Icon(Icons.add),
-        ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-        bottomNavigationBar: BottomAppBar(
-          shape: const CircularNotchedRectangle(),
-          notchMargin: 8.0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(0, Icons.home, 'Home'),
-              _buildNavItem(1, Icons.person, 'Profile'),
-              // Empty space for FAB
-              const SizedBox(width: 40),
-              _buildNavItem(2, Icons.chat, 'Chats'),
-              _buildNavItem(3, Icons.bookmark, 'Saved'),
-              _buildNavItem(4, Icons.settings, 'Settings'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(int index, IconData icon, String label) {
-    // Adjust index for items after the FAB
-    final adjustedIndex = index >= 2 ? index - 1 : index;
-    final isSelected = adjustedIndex == _currentIndex;
-
-    return InkWell(
-      onTap: () {
-        // All navigation items are now functional
-        setState(() {
-          _currentIndex = adjustedIndex;
-        });
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? AppTheme.primaryColor : Colors.grey,
-            ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: isSelected ? AppTheme.primaryColor : Colors.grey,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
         ),
       ),
     );

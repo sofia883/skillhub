@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:skill_hub/features/home/domain/entities/skill.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class SearchResultItem extends StatelessWidget {
+class SearchResultItem extends StatefulWidget {
   final Skill skill;
   final VoidCallback? onTap;
   final String searchQuery;
@@ -14,27 +15,61 @@ class SearchResultItem extends StatelessWidget {
   });
 
   @override
+  State<SearchResultItem> createState() => _SearchResultItemState();
+}
+
+class _SearchResultItemState extends State<SearchResultItem> {
+  String? _providerPhotoUrl;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProviderData();
+  }
+
+  Future<void> _loadProviderData() async {
+    if (widget.skill.userId == null) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.skill.userId)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data();
+        if (userData != null && userData['photoURL'] != null) {
+          setState(() {
+            _providerPhotoUrl = userData['photoURL'];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading provider data: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _getProviderInitial() {
+    if (widget.skill.provider.isEmpty) return '?';
+    return widget.skill.provider[0].toUpperCase();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Get location from skill or extract from description
-    String location = skill.location ?? 'Location not available';
-
-    // If location is not available, try to extract from description
-    if (location == 'Location not available' &&
-        skill.description.contains('Location:')) {
-      final locationStart = skill.description.indexOf('Location:');
-      final locationEnd = skill.description.indexOf('\n', locationStart);
-      if (locationEnd > locationStart) {
-        location =
-            skill.description.substring(locationStart + 9, locationEnd).trim();
-      } else {
-        location = skill.description.substring(locationStart + 9).trim();
-      }
-    }
-
     return InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
@@ -61,25 +96,27 @@ class SearchResultItem extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Skill image
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                skill.imageUrl,
-                width: 70,
-                height: 70,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  width: 70,
-                  height: 70,
-                  color: theme.colorScheme.primary.withOpacity(0.1),
-                  child: const Icon(
-                    Icons.image_not_supported_outlined,
-                    color: Colors.grey,
+            // Provider profile image or initial
+            _isLoading
+                ? const CircleAvatar(
+                    radius: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : CircleAvatar(
+                    radius: 28,
+                    backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                    backgroundImage: _providerPhotoUrl != null
+                        ? NetworkImage(_providerPhotoUrl!)
+                        : null,
+                    child: _providerPhotoUrl == null
+                        ? Text(
+                            _getProviderInitial(),
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: theme.colorScheme.primary,
+                            ),
+                          )
+                        : null,
                   ),
-                ),
-              ),
-            ),
             const SizedBox(width: 16),
 
             // Skill details
@@ -89,8 +126,8 @@ class SearchResultItem extends StatelessWidget {
                 children: [
                   // Highlight the search query in the title
                   _buildHighlightedText(
-                    skill.title,
-                    searchQuery,
+                    widget.skill.title,
+                    widget.searchQuery,
                     theme.textTheme.titleMedium!.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -108,7 +145,7 @@ class SearchResultItem extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      skill.category,
+                      widget.skill.category,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.primary,
                         fontWeight: FontWeight.w500,
@@ -118,26 +155,14 @@ class SearchResultItem extends StatelessWidget {
 
                   const SizedBox(height: 6),
 
-                  // Location with icon
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.location_on,
-                        size: 14,
-                        color: theme.colorScheme.secondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          location,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withOpacity(0.7),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                  // Provider name
+                  Text(
+                    widget.skill.provider,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
 
                   const SizedBox(height: 6),
@@ -146,29 +171,28 @@ class SearchResultItem extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Provider
-                      Expanded(
+                      // Rating
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            CircleAvatar(
-                              radius: 10,
-                              backgroundColor:
-                                  theme.colorScheme.secondary.withOpacity(0.1),
-                              child: Icon(
-                                Icons.person,
-                                size: 12,
-                                color: theme.colorScheme.secondary,
-                              ),
+                            const Icon(
+                              Icons.star_rounded,
+                              color: Colors.amber,
+                              size: 16,
                             ),
                             const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                skill.provider,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            Text(
+                              widget.skill.rating.toString(),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber.shade900,
                               ),
                             ),
                           ],
@@ -184,7 +208,7 @@ class SearchResultItem extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '₹${skill.price.toStringAsFixed(0)}',
+                          '₹${widget.skill.price.toStringAsFixed(0)}',
                           style: theme.textTheme.labelMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
