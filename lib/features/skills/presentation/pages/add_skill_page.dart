@@ -12,11 +12,15 @@ import '../../../../core/widgets/custom_button.dart';
 import '../../../../core/widgets/custom_text_field.dart';
 import '../../../../features/home/data/repositories/skill_repository.dart';
 import '../../../profile/presentation/widgets/enhanced_location_selector.dart';
+import '../../../profile/presentation/pages/profile_page.dart';
 import '../widgets/price_input.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:country_state_city_picker/country_state_city_picker.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
+import 'package:uuid/uuid.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path/path.dart' as path;
 
 class AddSkillPage extends StatefulWidget {
   const AddSkillPage({super.key});
@@ -26,7 +30,8 @@ class AddSkillPage extends StatefulWidget {
 }
 
 class _AddSkillPageState extends State<AddSkillPage> {
-  final _formKey = GlobalKey<FormState>();
+  late final GlobalKey<FormState> _formKey;
+  late final GlobalKey<FormState> _priceFormKey;
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
@@ -198,9 +203,17 @@ class _AddSkillPageState extends State<AddSkillPage> {
   String? _completePhoneNumber;
   bool _isValidPhone = false;
 
+  AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
+
+  // Add this at the top with other class variables
+  bool _shouldValidate = false;
+
   @override
   void initState() {
     super.initState();
+    _formKey = GlobalKey<FormState>();
+    _priceFormKey = GlobalKey<FormState>();
+    _shouldValidate = false;
     // Initialize default subcategory
     if (subcategories.containsKey(_selectedCategory) &&
         subcategories[_selectedCategory]!.isNotEmpty) {
@@ -412,75 +425,90 @@ class _AddSkillPageState extends State<AddSkillPage> {
     return imageUrls;
   }
 
-  Future<void> _submitSkill() async {
-    // Check for blank fields in the final step too
-    if (_titleController.text.isEmpty ||
-        _descriptionController.text.isEmpty ||
-        _locationController.text.isEmpty ||
-        _availabilityController.text.isEmpty ||
-        (_priceController.text.isEmpty &&
-            _selectedPriceType != 'Contact for Pricing')) {
+  bool _validateCurrentStep() {
+    // Only validate when Next/Submit is clicked
+    if (!_shouldValidate) return true;
+
+    bool isValid = true;
+    setState(() {
+      _autovalidateMode = AutovalidateMode.always;
+    });
+
+    switch (_currentStep) {
+      case 0: // Basic Info
+        if (_titleController.text.isEmpty) {
+          isValid = false;
+        }
+        if (_selectedCategory.isEmpty) {
+          isValid = false;
+        }
+        if (_selectedPriceType != 'Contact for Pricing') {
+          if (_priceController.text.isEmpty) {
+            isValid = false;
+          } else {
+            final price = double.tryParse(_priceController.text);
+            if (price == null || price <= 0) {
+              isValid = false;
+            }
+          }
+        }
+        return isValid;
+
+      case 1: // Details
+        if (_selectedCountry == null ||
+            _selectedState == null ||
+            _selectedCity == null) {
+          isValid = false;
+        }
+        if (_availabilityController.text.isEmpty) {
+          isValid = false;
+        }
+        return isValid;
+
+      case 2: // Photos
+        return true;
+
+      default:
+        return true;
+    }
+  }
+
+  void _submitSkill() async {
+    setState(() {
+      _autovalidateMode = AutovalidateMode.always;
+    });
+
+    if (!_formKey.currentState!.validate() || !_validateCurrentStep()) {
+      // Show error message
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              const Text('Please fill all required fields in previous steps'),
-          backgroundColor: Colors.amber[700],
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'OK',
-            textColor: Colors.white,
-            onPressed: () {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            },
-          ),
+        const SnackBar(
+          content: Text('Please fill all required fields'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
         ),
       );
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
-      // Show uploading status
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Processing your submission...'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      setState(() {
+        _isLoading = true;
+      });
 
-      // Upload images to ImgBB
+      // Upload images first
       List<String> imageUrls = [];
       if (_selectedImages.isNotEmpty) {
-        try {
-          imageUrls = await _uploadImages();
-          debugPrint(
-              'Image upload complete: ${imageUrls.length} images uploaded');
-        } catch (e) {
-          debugPrint('Error uploading images: $e');
-          // Continue even if image upload fails
-        }
+        imageUrls = await Future.wait(
+          _selectedImages.map((image) => _uploadImage(image)),
+        );
       }
 
-      // Create skill data with fixed IDs and ensure all fields are properly initialized
-      final skillId = DateTime.now().millisecondsSinceEpoch.toString();
-      final price = double.tryParse(_priceController.text.trim()) ?? 0.0;
-
-      // Get current user or sign in anonymously if needed
-      User? currentUser = FirebaseAuth.instance.currentUser;
+      final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) {
-        try {
-          final userCredential =
-              await FirebaseAuth.instance.signInAnonymously();
-          currentUser = userCredential.user;
-          debugPrint(
-              '✅ Signed in anonymously with user ID: ${currentUser?.uid}');
-        } catch (e) {
-          debugPrint('⚠️ Failed to sign in anonymously: $e');
-        }
+        throw Exception('No user logged in');
       }
+
+      final skillId = const Uuid().v4();
 
       // Create skill data
       final skillData = {
@@ -493,29 +521,25 @@ class _AddSkillPageState extends State<AddSkillPage> {
             ? 0.0
             : (double.tryParse(_priceController.text.trim()) ?? 0.0),
         'priceType': _selectedPriceType,
-        'rating': 0.0, // New skills start with no rating
+        'rating': 0.0,
         'imageUrl': imageUrls.isNotEmpty
             ? imageUrls.first
             : 'https://via.placeholder.com/300x200?text=No+Image',
         'imageUrls': imageUrls,
         'createdAt': FieldValue.serverTimestamp(),
         'isFeatured': false,
-        'location': _locationController.text.trim(),
-        'houseNo': _houseNoController.text.trim(),
         'isOnline': _isOnline,
         'availability': _availabilityController.text.trim(),
         'address': {
-          'street': _locationController.text.trim(),
           'houseNo': _houseNoController.text.trim(),
           'country': _selectedCountry,
           'state': _selectedState,
           'city': _selectedCity,
         },
-        'userId':
-            currentUser?.uid ?? 'unknown_user', // Important for security rules
-        'providerId': currentUser?.uid ?? 'unknown_user',
+        'userId': currentUser.uid,
+        'providerId': currentUser.uid,
         'provider':
-            currentUser?.displayName ?? currentUser?.email ?? 'Anonymous User',
+            currentUser.displayName ?? currentUser.email ?? 'Anonymous User',
         'country': _selectedCountry,
         'state': _selectedState,
         'city': _selectedCity,
@@ -525,83 +549,57 @@ class _AddSkillPageState extends State<AddSkillPage> {
           'phone': _completePhoneNumber,
       };
 
-      debugPrint('Attempting to save skill: ${skillData['title']}');
+      // Save to Firestore
+      await _skillRepository.addSkill(skillData);
 
-      // Show saving indicator
+      // Navigate immediately after successful save
       if (mounted) {
+        // Show a quick success message
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Saving your skill...'),
+            content: Text('Skill added successfully!'),
+            backgroundColor: Colors.green,
             duration: Duration(seconds: 1),
           ),
         );
-      }
 
-      // Save to Firestore using repository with retry mechanism
-      bool success = false;
-      for (int i = 0; i < 3; i++) {
-        try {
-          debugPrint('✅ Attempt ${i + 1} to save skill: ${skillData['title']}');
-          success = await _skillRepository.addSkill(skillData);
-          if (success) {
-            debugPrint('✅ Successfully saved skill on attempt ${i + 1}');
-            break;
-          }
-          // Wait briefly before retrying
-          await Future.delayed(const Duration(seconds: 1));
-        } catch (e) {
-          debugPrint('❌ Attempt ${i + 1} failed: $e');
-        }
-      }
-
-      // Show appropriate message based on success
-      if (mounted) {
-        if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Skill saved successfully!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Skill saved locally. Will sync when online.'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-
-        // Show success dialog
-        _showSuccessDialog();
-      }
-    } catch (e) {
-      debugPrint('Error submitting skill: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-                'There was an issue saving your skill. We\'ll try again later.'),
-            backgroundColor: const Color(0xFFFF8F00), // Colors.amber[700]
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Dismiss',
-              textColor: Colors.white,
-              onPressed: () {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              },
-            ),
+        // Navigate to profile page
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ProfilePage(initialTab: 1),
           ),
         );
       }
-    } finally {
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _onStepContinue() {
+    setState(() {
+      _shouldValidate = true;
+    });
+
+    if (_currentStep < _steps.length - 1) {
+      if (_validateCurrentStep()) {
         setState(() {
-          _isLoading = false;
+          _currentStep += 1;
+          _shouldValidate = false; // Reset validation flag for next step
         });
       }
+    } else {
+      _submitSkill();
     }
   }
 
@@ -648,38 +646,6 @@ class _AddSkillPageState extends State<AddSkillPage> {
     });
   }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green, size: 28),
-            SizedBox(width: 8),
-            Text('Success!'),
-          ],
-        ),
-        content: const Text(
-            'Your skill has been added successfully. You will be redirected to your profile to view it.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Close dialog
-              // Navigate to profile page with skills tab
-              Navigator.pushReplacementNamed(
-                context,
-                '/profile',
-                arguments: {'initialTab': 1}, // Assuming skills tab is index 1
-              );
-            },
-            child: const Text('View My Skills'),
-          ),
-        ],
-      ),
-    );
-  }
-
   List<Step> get _steps => [
         Step(
           title: const Text('Basics'),
@@ -707,110 +673,53 @@ class _AddSkillPageState extends State<AddSkillPage> {
             title: const Text('Add Your Skill'),
             elevation: 0,
           ),
-          body: Stack(
-            children: [
-              Stepper(
-                type: StepperType.horizontal,
-                currentStep: _currentStep,
-                onStepTapped: (step) => setState(() => _currentStep = step),
-                onStepContinue: () {
-                  final isLastStep = _currentStep == _steps.length - 1;
-                  if (isLastStep) {
-                    // For the last step, only check if images are successfully uploaded
-                    _submitSkill();
-                  } else {
-                    // Validate the current step before proceeding
-                    bool isValid = true;
-                    String errorMessage = '';
+          body: Form(
+            key: _formKey,
+            child: Stack(
+              children: [
+                Stepper(
+                  type: StepperType.horizontal,
+                  currentStep: _currentStep,
+                  onStepTapped: (step) => setState(() => _currentStep = step),
+                  onStepContinue: _onStepContinue,
+                  onStepCancel: _currentStep == 0
+                      ? null // Disable on first step
+                      : () => setState(() => _currentStep -= 1),
+                  controlsBuilder: (context, details) {
+                    final isLastStep = _currentStep == _steps.length - 1;
 
-                    // Check validation based on current step
-                    if (_currentStep == 0) {
-                      // Validate basic info fields
-                      if (_titleController.text.isEmpty) {
-                        isValid = false;
-                        errorMessage = 'Please enter a skill title';
-                      } else if (_priceController.text.isEmpty &&
-                          _priceData['type'] != 'Contact for Pricing') {
-                        isValid = false;
-                        errorMessage = 'Please enter a price';
-                      } else if (_priceData['type'] != 'Contact for Pricing' &&
-                          double.tryParse(_priceController.text) == null) {
-                        isValid = false;
-                        errorMessage = 'Please enter a valid price';
-                      }
-                    } else if (_currentStep == 1) {
-                      // Validate details fields
-                      if (_descriptionController.text.isEmpty) {
-                        isValid = false;
-                        errorMessage = 'Please enter a description';
-                      } else if (_locationController.text.isEmpty) {
-                        isValid = false;
-                        errorMessage = 'Please enter your location';
-                      } else if (_availabilityController.text.isEmpty) {
-                        isValid = false;
-                        errorMessage = 'Please specify your availability';
-                      }
-                    }
-
-                    if (!isValid) {
-                      // Show error message with amber color instead of red
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(errorMessage),
-                          backgroundColor: Colors.amber[700],
-                          duration: const Duration(seconds: 3),
-                          action: SnackBarAction(
-                            label: 'OK',
-                            textColor: Colors.white,
-                            onPressed: () {
-                              ScaffoldMessenger.of(context)
-                                  .hideCurrentSnackBar();
-                            },
-                          ),
-                        ),
-                      );
-                    } else {
-                      setState(() => _currentStep += 1);
-                    }
-                  }
-                },
-                onStepCancel: _currentStep == 0
-                    ? null // Disable on first step
-                    : () => setState(() => _currentStep -= 1),
-                controlsBuilder: (context, details) {
-                  final isLastStep = _currentStep == _steps.length - 1;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 24.0),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            if (_currentStep != 0)
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 24.0),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              if (_currentStep != 0)
+                                Expanded(
+                                  child: CustomButton(
+                                    text: 'Back',
+                                    onPressed: details.onStepCancel!,
+                                    isOutlined: true,
+                                  ),
+                                ),
+                              if (_currentStep != 0) const SizedBox(width: 12),
                               Expanded(
                                 child: CustomButton(
-                                  text: 'Back',
-                                  onPressed: details.onStepCancel!,
-                                  isOutlined: true,
+                                  text: isLastStep ? 'Submit' : 'Next',
+                                  onPressed: details.onStepContinue!,
+                                  isLoading: _isLoading || _isUploadingImages,
                                 ),
                               ),
-                            if (_currentStep != 0) const SizedBox(width: 12),
-                            Expanded(
-                              child: CustomButton(
-                                text: isLastStep ? 'Submit' : 'Next',
-                                onPressed: details.onStepContinue!,
-                                isLoading: _isLoading || _isUploadingImages,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                steps: _steps,
-              ),
-            ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  steps: _steps,
+                ),
+              ],
+            ),
           ),
         ),
         if (_isLoading)
@@ -837,13 +746,15 @@ class _AddSkillPageState extends State<AddSkillPage> {
         CustomTextField(
           label: 'Skill Title',
           controller: _titleController,
+          autovalidateMode: _autovalidateMode,
           validator: (value) {
             if (value == null || value.isEmpty) {
-              return 'Please enter a title';
+              return 'Please enter a skill title';
             }
             return null;
           },
           prefixIcon: const Icon(Icons.title),
+          errorStyle: const TextStyle(color: Colors.red),
         ),
         const SizedBox(height: 16),
 
@@ -853,8 +764,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
             labelText: 'Category',
             border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.category),
+            errorStyle: TextStyle(color: Colors.red),
           ),
           value: _selectedCategory,
+          autovalidateMode: _autovalidateMode,
           items: categories.map((category) {
             return DropdownMenuItem(
               value: category,
@@ -906,11 +819,27 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ],
 
         // Price field with pricing model
-        PriceInput(
-          controller: _priceController,
-          onCurrencyAndTypeChanged: (currency, type) {
-            _updatePriceData(currency, type);
-          },
+        Form(
+          key: _priceFormKey,
+          child: PriceInput(
+            controller: _priceController,
+            onCurrencyAndTypeChanged: (currency, type) {
+              _updatePriceData(currency, type);
+            },
+            autovalidateMode: _autovalidateMode,
+            validator: (value) {
+              if (_selectedPriceType != 'Contact for Pricing') {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter a price';
+                }
+                final price = double.tryParse(value);
+                if (price == null || price <= 0) {
+                  return 'Please enter a valid price';
+                }
+              }
+              return null;
+            },
+          ),
         ),
       ],
     );
@@ -920,55 +849,90 @@ class _AddSkillPageState extends State<AddSkillPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Description field
-        CustomTextField(
-          label: 'Description',
-          controller: _descriptionController,
-          maxLines: 5,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter a description';
-            }
-            return null;
-          },
-          prefixIcon: const Icon(Icons.description),
+        // Description field with helper text
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CustomTextField(
+              label: 'Description (Optional)',
+              controller: _descriptionController,
+              maxLines: 5,
+              autovalidateMode: _shouldValidate
+                  ? _autovalidateMode
+                  : AutovalidateMode.disabled,
+              validator: (value) {
+                return null; // Description is optional
+              },
+              prefixIcon: const Icon(Icons.description),
+              errorStyle: const TextStyle(color: Colors.red),
+              hintText:
+                  'A clear description helps your clients understand your services better...',
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'Pro tip: Include your experience, specialties, and what makes your service unique',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
 
-        // Phone Field
-        IntlPhoneField(
-          decoration: const InputDecoration(
-            labelText: 'Phone Number (Optional)',
-            border: OutlineInputBorder(),
-            counterText: '',
-            helperText:
-                'Leave empty if you don\'t want to provide a phone number',
-          ),
-          initialCountryCode: 'IN',
-          flagsButtonPadding: const EdgeInsets.all(8),
-          showDropdownIcon: true,
-          dropdownIconPosition: IconPosition.trailing,
-          invalidNumberMessage: 'Invalid phone number',
-          onChanged: (phone) {
-            setState(() {
-              _completePhoneNumber = phone.completeNumber;
-              _isValidPhone = phone.isValidNumber();
-            });
-          },
-          onCountryChanged: (country) {
-            debugPrint('Country changed to: ${country.name}');
-          },
-          validator: (value) {
-            if (value == null || value.number.isEmpty) {
-              _isValidPhone = false;
-              _completePhoneNumber = null;
-              return null;
-            }
-            _isValidPhone = value.isValidNumber();
-            return _isValidPhone ? null : 'Invalid phone number';
-          },
+        // Phone Field with clear optional label
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IntlPhoneField(
+              decoration: const InputDecoration(
+                labelText: 'Phone Number (Optional)',
+                border: OutlineInputBorder(),
+                counterText: '',
+                helperText:
+                    'Add your phone number if you want clients to call you directly',
+                errorStyle: TextStyle(color: Colors.red),
+              ),
+              initialCountryCode: 'IN',
+              flagsButtonPadding: const EdgeInsets.all(8),
+              showDropdownIcon: true,
+              dropdownIconPosition: IconPosition.trailing,
+              invalidNumberMessage: 'Invalid phone number',
+              onChanged: (phone) {
+                setState(() {
+                  _completePhoneNumber = phone.completeNumber;
+                  _isValidPhone = phone.isValidNumber();
+                });
+              },
+              onCountryChanged: (country) {
+                debugPrint('Country changed to: ${country.name}');
+              },
+              validator: (value) {
+                if (value == null || value.number.isEmpty) {
+                  return null;
+                }
+                return value.isValidNumber() ? null : 'Invalid phone number';
+              },
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
+
+        // House number field with clear optional label
+        CustomTextField(
+          label: 'House/Flat No. (Optional)',
+          controller: _houseNoController,
+          hintText: 'e.g., A-123, Flat 4B',
+          prefixIcon: const Icon(Icons.home),
+          autovalidateMode:
+              _shouldValidate ? _autovalidateMode : AutovalidateMode.disabled,
+          helperText: 'Add your house/flat number for in-person services',
+        ),
+        const SizedBox(height: 24),
 
         // Address selector
         const Text(
@@ -988,10 +952,11 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
         const SizedBox(height: 8),
 
-        // Country State City Picker
+        // Country State City Picker with validation message
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SelectState(
                 onCountryChanged: (value) async {
@@ -1018,46 +983,41 @@ class _AddSkillPageState extends State<AddSkillPage> {
                   fontWeight: FontWeight.w500,
                 ),
               ),
+              if (_autovalidateMode == AutovalidateMode.always &&
+                  (_selectedCountry == null ||
+                      _selectedState == null ||
+                      _selectedCity == null))
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 12),
+                  child: Text(
+                    'Please select your location (country, state, and city)',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
         const SizedBox(height: 16),
 
-        // Location field
-        Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: CustomTextField(
-                label: 'Location',
-                controller: _locationController,
-                prefixIcon: const Icon(Icons.location_on),
-                hintText: 'e.g., Street name, Area',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your location';
-                  }
-                  return null;
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: CustomTextField(
-                label: 'House No. (Optional)',
-                controller: _houseNoController,
-                hintText: 'e.g., A-123',
-                prefixIcon: const Icon(Icons.home),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-
         // Online availability
         SwitchListTile(
-          title: const Text('Available Online'),
-          subtitle: const Text('Can you provide this service remotely?'),
+          title: Text(
+            'Available Online',
+            style: TextStyle(
+              fontSize: AppTheme.fontSizeMedium,
+              color: AppTheme.textPrimaryColor,
+            ),
+          ),
+          subtitle: Text(
+            'Can you provide this service remotely?',
+            style: TextStyle(
+              fontSize: AppTheme.fontSizeSmall,
+              color: AppTheme.textSecondaryColor,
+            ),
+          ),
           value: _isOnline,
           onChanged: (value) {
             setState(() {
@@ -1072,10 +1032,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Availability',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: AppTheme.fontSizeMedium,
                 fontWeight: FontWeight.w500,
                 color: AppTheme.textPrimaryColor,
               ),
@@ -1086,7 +1046,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
               runSpacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Text('All Time'),
+                  label: Text(
+                    'All Time',
+                    style: TextStyle(fontSize: AppTheme.fontSizeSmall),
+                  ),
                   selected: _availabilityController.text == 'All Time',
                   onSelected: (selected) {
                     if (selected) {
@@ -1097,7 +1060,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
                   },
                 ),
                 ChoiceChip(
-                  label: const Text('Weekends Only'),
+                  label: Text(
+                    'Weekends Only',
+                    style: TextStyle(fontSize: AppTheme.fontSizeSmall),
+                  ),
                   selected: _availabilityController.text == 'Weekends Only',
                   onSelected: (selected) {
                     if (selected) {
@@ -1108,7 +1074,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
                   },
                 ),
                 ChoiceChip(
-                  label: const Text('Weekdays Only'),
+                  label: Text(
+                    'Weekdays Only',
+                    style: TextStyle(fontSize: AppTheme.fontSizeSmall),
+                  ),
                   selected: _availabilityController.text == 'Weekdays Only',
                   onSelected: (selected) {
                     if (selected) {
@@ -1122,12 +1091,15 @@ class _AddSkillPageState extends State<AddSkillPage> {
             ),
             const SizedBox(height: 8),
             CustomTextField(
-              label: 'Custom Availability',
+              label: 'Availability',
               controller: _availabilityController,
               prefixIcon: const Icon(Icons.access_time),
               hintText: 'Or specify custom timing...',
+              autovalidateMode: _shouldValidate
+                  ? _autovalidateMode
+                  : AutovalidateMode.disabled,
               validator: (value) {
-                if (value == null || value.isEmpty) {
+                if (_shouldValidate && (value == null || value.isEmpty)) {
                   return 'Please specify your availability';
                 }
                 return null;
@@ -1144,7 +1116,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Showcase Your Expertise',
+          'Showcase Your Expertise (Optional)',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -1153,7 +1125,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
         ),
         const SizedBox(height: 12),
         const Text(
-          'Share high-quality photos that demonstrate your skills and experience. Great photos can significantly increase your chances of getting hired!',
+          'Share high-quality photos that demonstrate your skills and experience. While optional, great photos can significantly increase your chances of getting hired!',
           style: TextStyle(
             fontSize: 14,
             color: AppTheme.textSecondaryColor,
@@ -1476,5 +1448,37 @@ class _AddSkillPageState extends State<AddSkillPage> {
         _priceController.clear();
       }
     });
+  }
+
+  Future<String> _uploadImage(File image) async {
+    try {
+      // Convert image to base64
+      final bytes = await image.readAsBytes();
+      final base64Image = base64Encode(bytes);
+
+      // Upload to ImgBB
+      final response = await http.post(
+        Uri.parse('https://api.imgbb.com/1/upload'),
+        body: {
+          'key': _imgbbApiKey,
+          'image': base64Image,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
+        if (jsonResponse['success'] == true) {
+          return jsonResponse['data']['display_url'];
+        } else {
+          throw Exception('Image upload failed: ${jsonResponse['error']}');
+        }
+      } else {
+        throw Exception(
+            'Image upload failed with status ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Error uploading image: $e');
+      throw Exception('Failed to upload image');
+    }
   }
 }

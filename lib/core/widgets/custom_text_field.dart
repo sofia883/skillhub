@@ -15,6 +15,9 @@ class CustomTextField extends StatelessWidget {
   final VoidCallback? onEditingComplete;
   final Function(String)? onChanged;
   final String? hintText;
+  final AutovalidateMode? autovalidateMode;
+  final TextStyle? errorStyle;
+  final String? helperText;
 
   const CustomTextField({
     Key? key,
@@ -31,6 +34,9 @@ class CustomTextField extends StatelessWidget {
     this.onEditingComplete,
     this.onChanged,
     this.hintText,
+    this.autovalidateMode,
+    this.errorStyle,
+    this.helperText,
   }) : super(key: key);
 
   @override
@@ -63,10 +69,7 @@ class CustomTextField extends StatelessWidget {
         ),
         filled: true,
         fillColor: Colors.white,
-        errorStyle: TextStyle(
-          color: Colors.amber[800],
-          fontWeight: FontWeight.w500,
-        ),
+        errorStyle: errorStyle ?? const TextStyle(color: Colors.red),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(
@@ -81,7 +84,9 @@ class CustomTextField extends StatelessWidget {
             width: 2.0,
           ),
         ),
+        helperText: helperText,
       ),
+      autovalidateMode: autovalidateMode,
     );
   }
 }

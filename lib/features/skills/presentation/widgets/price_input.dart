@@ -16,13 +16,17 @@ enum PricingModel {
 
 class PriceInput extends StatefulWidget {
   final TextEditingController controller;
-  final Function(String currency, String priceType) onCurrencyAndTypeChanged;
+  final Function(String, String) onCurrencyAndTypeChanged;
+  final String? Function(String?)? validator;
+  final AutovalidateMode? autovalidateMode;
 
   const PriceInput({
-    super.key,
+    Key? key,
     required this.controller,
     required this.onCurrencyAndTypeChanged,
-  });
+    this.validator,
+    this.autovalidateMode,
+  }) : super(key: key);
 
   @override
   State<PriceInput> createState() => _PriceInputState();
@@ -30,130 +34,108 @@ class PriceInput extends StatefulWidget {
 
 class _PriceInputState extends State<PriceInput> {
   String _selectedCurrency = '₹';
-  String _selectedPriceType = 'Fixed Price';
-  bool _showPriceInput = true;
-
-  final List<String> _currencies = ['₹', '\$'];
-  final List<String> _priceTypes = [
-    'Fixed Price',
-    'Per Hour',
-    'Per Day',
-    'Per Session',
-    'Per Project',
-    'Enter Custom Price',
-    'Contact for Pricing'
-  ];
+  String _selectedType = 'Fixed';
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Price',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey[300]!),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
+        if (_selectedType != 'Contact for Pricing') ...[
+          Row(
             children: [
-              // Currency and Amount Row
-              if (_showPriceInput) ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Currency Dropdown
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border(
-                          right: BorderSide(color: Colors.grey[300]!),
-                        ),
-                      ),
-                      child: DropdownButton<String>(
-                        value: _selectedCurrency,
-                        underline: const SizedBox(),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        items: _currencies.map((String currency) {
-                          return DropdownMenuItem<String>(
-                            value: currency,
-                            child: Text(
-                              currency,
-                              style: theme.textTheme.titleMedium,
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
-                          if (newValue != null) {
-                            setState(() {
-                              _selectedCurrency = newValue;
-                            });
-                            widget.onCurrencyAndTypeChanged(
-                                _selectedCurrency, _selectedPriceType);
-                          }
-                        },
-                      ),
-                    ),
-                    // Amount Input
-                    Expanded(
-                      child: TextFormField(
-                        controller: widget.controller,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: const InputDecoration(
-                          hintText: 'Enter amount',
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Divider(height: 1, color: Colors.grey[300]),
-              ],
-              // Price Type Dropdown
+              // Currency dropdown
               Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: DropdownButton<String>(
-                  value: _selectedPriceType,
-                  isExpanded: true,
+                  value: _selectedCurrency,
                   underline: const SizedBox(),
-                  items: _priceTypes.map((String type) {
+                  items: ['₹', '\$', '€', '£'].map((String value) {
                     return DropdownMenuItem<String>(
-                      value: type,
-                      child: Text(type),
+                      value: value,
+                      child: Text(value),
                     );
                   }).toList(),
                   onChanged: (String? newValue) {
                     if (newValue != null) {
                       setState(() {
-                        _selectedPriceType = newValue;
-                        _showPriceInput = newValue != 'Contact for Pricing';
-                        if (!_showPriceInput) {
-                          widget.controller.clear();
-                        }
+                        _selectedCurrency = newValue;
                       });
                       widget.onCurrencyAndTypeChanged(
-                          _selectedCurrency, _selectedPriceType);
+                          _selectedCurrency, _selectedType);
                     }
                   },
                 ),
               ),
+              const SizedBox(width: 8),
+              // Price input field
+              Expanded(
+                child: TextFormField(
+                  controller: widget.controller,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Price',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.attach_money),
+                    hintText: 'Enter price',
+                  ),
+                  validator: widget.validator,
+                  autovalidateMode: widget.autovalidateMode,
+                ),
+              ),
             ],
           ),
+          const SizedBox(height: 16),
+        ],
+        // Price type selection
+        Wrap(
+          spacing: 8,
+          children: [
+            ChoiceChip(
+              label: const Text('Fixed'),
+              selected: _selectedType == 'Fixed',
+              onSelected: (bool selected) {
+                if (selected) {
+                  setState(() {
+                    _selectedType = 'Fixed';
+                  });
+                  widget.onCurrencyAndTypeChanged(
+                      _selectedCurrency, _selectedType);
+                }
+              },
+            ),
+            ChoiceChip(
+              label: const Text('Hourly'),
+              selected: _selectedType == 'Hourly',
+              onSelected: (bool selected) {
+                if (selected) {
+                  setState(() {
+                    _selectedType = 'Hourly';
+                  });
+                  widget.onCurrencyAndTypeChanged(
+                      _selectedCurrency, _selectedType);
+                }
+              },
+            ),
+            ChoiceChip(
+              label: const Text('Contact for Pricing'),
+              selected: _selectedType == 'Contact for Pricing',
+              onSelected: (bool selected) {
+                if (selected) {
+                  setState(() {
+                    _selectedType = 'Contact for Pricing';
+                    widget.controller.clear();
+                  });
+                  widget.onCurrencyAndTypeChanged(
+                      _selectedCurrency, _selectedType);
+                }
+              },
+            ),
+          ],
         ),
       ],
     );

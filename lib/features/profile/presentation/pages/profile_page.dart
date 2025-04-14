@@ -12,7 +12,12 @@ import 'package:skill_hub/features/skills/presentation/pages/add_skill_page.dart
 import 'package:skill_hub/features/skills/presentation/pages/edit_skill_page.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  final int initialTab;
+
+  const ProfilePage({
+    super.key,
+    this.initialTab = 0,
+  });
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -46,7 +51,11 @@ class _ProfilePageState extends State<ProfilePage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab,
+    );
     _loadUserData();
     _initializeSkillsStream();
   }

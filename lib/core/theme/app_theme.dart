@@ -2,15 +2,110 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Main Colors - Light Tiffany Blue theme
+  // Primary Colors
   static const Color primaryColor =
-      Color(0xFF4FD8D6); // Slightly darker Tiffany Blue
+      Color(0xFFFA8D21); // Darker but still light orange
+  static const Color primaryLightColor =
+      Color(0xFFFFE4CC); // Adjusted light shade
+  static const Color backgroundColor = Colors.white;
+
+  // Text Colors
+  static const Color textPrimaryColor = Color(0xFF333333);
+  static const Color textSecondaryColor = Color(0xFF666666);
+  static const Color textLightColor = Color(0xFF999999);
+
+  // Font Sizes
+  static const double fontSizeXSmall = 10.0;
+  static const double fontSizeSmall = 12.0;
+  static const double fontSizeMedium = 14.0;
+  static const double fontSizeLarge = 16.0;
+  static const double fontSizeXLarge = 18.0;
+
+  static ThemeData get theme {
+    return ThemeData(
+      primaryColor: primaryColor,
+      scaffoldBackgroundColor: backgroundColor,
+      colorScheme: ColorScheme.light(
+        primary: primaryColor,
+        secondary: primaryColor,
+        background: backgroundColor,
+        surface: backgroundColor,
+        onPrimary: Colors.white,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: backgroundColor,
+        foregroundColor: textPrimaryColor,
+        elevation: 0,
+        titleTextStyle: TextStyle(
+          color: textPrimaryColor,
+          fontSize: fontSizeLarge,
+          fontWeight: FontWeight.w600,
+        ),
+        iconTheme: IconThemeData(color: textPrimaryColor),
+      ),
+      textTheme: const TextTheme(
+        displayLarge:
+            TextStyle(fontSize: fontSizeXLarge, fontWeight: FontWeight.bold),
+        displayMedium:
+            TextStyle(fontSize: fontSizeLarge, fontWeight: FontWeight.bold),
+        bodyLarge: TextStyle(fontSize: fontSizeMedium),
+        bodyMedium: TextStyle(fontSize: fontSizeSmall),
+        labelLarge: TextStyle(fontSize: fontSizeMedium),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: backgroundColor,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: primaryColor),
+        ),
+        labelStyle: const TextStyle(
+          fontSize: fontSizeSmall,
+          color: textSecondaryColor,
+        ),
+        hintStyle: const TextStyle(
+          fontSize: fontSizeSmall,
+          color: textLightColor,
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          textStyle: const TextStyle(
+            fontSize: fontSizeMedium,
+            fontWeight: FontWeight.w600,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: primaryLightColor,
+        selectedColor: primaryColor,
+        labelStyle: const TextStyle(fontSize: fontSizeSmall),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+    );
+  }
+
+  // Main Colors - Light Tiffany Blue theme
   static const Color secondaryColor = Colors.white;
   static const Color accentColor = Color(0xFF20B2AA); // Medium Tiffany Blue
 
   // Shades
-  static const Color primaryLightColor =
-      Color(0xFF8EE8E7); // Light Tiffany Blue
   static const Color primaryDarkColor =
       Color(0xFF2AA09E); // Darker Tiffany Blue
 
@@ -18,15 +113,10 @@ class AppTheme {
   static const Color scaffoldBackgroundColor = Colors.white;
   static const Color cardColor = Colors.white;
 
-  // Text Colors
-  static const Color textPrimaryColor = Color(0xFF2C3E50); // Dark blue-gray
-  static const Color textSecondaryColor = Color(0xFF607D8B); // Blue-gray
-  static const Color textLightColor = Color(0xFF90A4AE); // Light blue-gray
-
   // Other Colors
-  static const Color successColor = Color(0xFF4FD8D6); // Same as primary
-  static const Color errorColor = Color(0xFFFF5252); // Red
-  static const Color warningColor = Color(0xFFFFB74D); // Orange
+  static const Color successColor = Color(0xFF4CAF50);
+  static const Color errorColor = Color(0xFFFF5252);
+  static const Color warningColor = Color(0xFFFFB74D);
 
   static const Color primary = Color(0xFFFFF176); // Light Yellow
   static const Color primaryLight =
