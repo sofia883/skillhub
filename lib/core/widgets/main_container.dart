@@ -18,10 +18,15 @@ class _MainContainerState extends State<MainContainer> {
   List<int> _navigationStack = [0]; // Track navigation history, start with home
 
   // List of screens to navigate between
-  final List<Widget> _screens = [
+  late final List<Widget> _screens = [
     const HomeScreen(),
     const ProfilePage(),
-    const AddSkillPage(),
+    AddSkillPage(
+      onSkillAdded: () {
+        // When skill is added, navigate to home page
+        _updateIndex(0); // 0 is the index for HomeScreen
+      },
+    ),
     const SettingsPage(),
   ];
 
@@ -39,7 +44,13 @@ class _MainContainerState extends State<MainContainer> {
       // If tapping on Add Skills tab and already on that tab, refresh it
       if (index == 2) {
         setState(() {
-          _screens[2] = AddSkillPage(key: UniqueKey());
+          _screens[2] = AddSkillPage(
+            key: UniqueKey(),
+            onSkillAdded: () {
+              // When skill is added, navigate to home page
+              _updateIndex(0); // 0 is the index for HomeScreen
+            },
+          );
         });
       }
       // If tapping on Home tab and already on that tab, refresh it

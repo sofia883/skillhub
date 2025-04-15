@@ -23,7 +23,12 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
 
 class AddSkillPage extends StatefulWidget {
-  const AddSkillPage({super.key});
+  final VoidCallback? onSkillAdded;
+
+  const AddSkillPage({
+    super.key,
+    this.onSkillAdded,
+  });
 
   @override
   State<AddSkillPage> createState() => _AddSkillPageState();
@@ -552,8 +557,9 @@ class _AddSkillPageState extends State<AddSkillPage> {
       // Save to Firestore
       await _skillRepository.addSkill(skillData);
 
-      // Show success message and navigate back
+      // Show success message and navigate
       if (mounted) {
+        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Skill added successfully!'),
@@ -562,12 +568,8 @@ class _AddSkillPageState extends State<AddSkillPage> {
           ),
         );
 
-        // Use Future.delayed to ensure the navigation happens after the current frame
-        Future.delayed(Duration.zero, () {
-          if (mounted) {
-            Navigator.of(context).pop();
-          }
-        });
+        // Call the callback to navigate to home screen
+        widget.onSkillAdded?.call();
       }
     } catch (e) {
       setState(() {
