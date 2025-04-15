@@ -4,11 +4,15 @@ import 'package:skill_hub/features/home/domain/entities/skill.dart';
 class SkillCard extends StatelessWidget {
   final Skill skill;
   final VoidCallback? onTap;
+  final Widget? titleWidget;
+  final Widget? descriptionWidget;
 
   const SkillCard({
     Key? key,
     required this.skill,
     this.onTap,
+    this.titleWidget,
+    this.descriptionWidget,
   }) : super(key: key);
 
   @override
@@ -141,14 +145,15 @@ class SkillCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
-                        child: Text(
-                          skill.title,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        child: titleWidget ??
+                            Text(
+                              skill.title,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -201,16 +206,17 @@ class SkillCard extends StatelessWidget {
                   const SizedBox(height: 12),
 
                   // Description
-                  Text(
-                    skill.description,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color:
-                          theme.textTheme.bodySmall?.color?.withOpacity(0.75),
-                      height: 1.4,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  descriptionWidget ??
+                      Text(
+                        skill.description,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.textTheme.bodySmall?.color
+                              ?.withOpacity(0.75),
+                          height: 1.4,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
 
                   const SizedBox(height: 16),
 

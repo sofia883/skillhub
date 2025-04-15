@@ -1,243 +1,131 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/theme/app_theme.dart';
 
-class SearchSuggestions extends StatefulWidget {
-  final List<String> suggestions;
-  final Function(String) onSuggestionTap;
-  final VoidCallback onClearHistory;
+class SearchHistory extends StatefulWidget {
+  final Function(String) onHistorySelected;
 
-  const SearchSuggestions({
-    super.key,
-    required this.suggestions,
-    required this.onSuggestionTap,
-    required this.onClearHistory,
-  });
+  const SearchHistory({
+    Key? key,
+    required this.onHistorySelected,
+  }) : super(key: key);
 
   @override
-  State<SearchSuggestions> createState() => _SearchSuggestionsState();
+  State<SearchHistory> createState() => _SearchHistoryState();
 }
 
-class _SearchSuggestionsState extends State<SearchSuggestions> {
-  // Flag to track if history is expanded
-  bool _isHistoryExpanded = false;
+class _SearchHistoryState extends State<SearchHistory> {
+  static const _recentSearchesKey = 'recent_searches';
+  List<String> _recentSearches = [];
+  bool _showAllHistory = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentSearches();
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _recentSearches = prefs.getStringList(_recentSearchesKey) ?? [];
+    });
+  }
+
+  Future<void> _saveRecentSearch(String query) async {
+    if (query.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final searches = prefs.getStringList(_recentSearchesKey) ?? [];
+
+    // Remove if exists and add to front
+    searches.remove(query);
+    searches.insert(0, query);
+
+    await prefs.setStringList(_recentSearchesKey, searches);
+    setState(() {
+      _recentSearches = searches;
+    });
+  }
+
+  Future<void> _clearRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_recentSearchesKey);
+    setState(() {
+      _recentSearches = [];
+    });
+  }
+
+  void _onHistoryTap(String query) {
+    _saveRecentSearch(query);
+    widget.onHistorySelected(query);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (widget.suggestions.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search,
-              size: 48,
-              color: theme.colorScheme.primary.withOpacity(0.3),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Start typing to search',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.7),
-              ),
-            ),
-          ],
-        ),
-      );
+    if (_recentSearches.isEmpty) {
+      return const SizedBox.shrink();
     }
+
+    final displayedSearches =
+        _showAllHistory ? _recentSearches : _recentSearches.take(7).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header with clear button
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Suggestions',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.primary,
+              const Text(
+                'Recent Searches',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const Spacer(),
-              if (widget.suggestions.isNotEmpty)
-                TextButton.icon(
-                  onPressed: widget.onClearHistory,
-                  icon: const Icon(Icons.clear_all, size: 16),
-                  label: const Text('Clear'),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(0, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              TextButton(
+                onPressed: _clearRecentSearches,
+                child: const Text(
+                  'Clear',
+                  style: TextStyle(
+                    color: AppTheme.primaryColor,
+                    fontSize: 14,
                   ),
                 ),
+              ),
             ],
           ),
         ),
-
-        // Suggestions list
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemCount: widget.suggestions.length,
-            itemBuilder: (context, index) {
-              final suggestion = widget.suggestions[index];
-
-              // This code was incorrect - we need to check if this is a history item
-              // that should be hidden when not expanded
-
-              // First, identify if this is a history item
-              final recentIndex = widget.suggestions.indexOf('RECENT SEARCHES');
-              final viewAllIndex =
-                  widget.suggestions.indexOf('VIEW_ALL_HISTORY');
-              final trendingIndex =
-                  widget.suggestions.indexOf('TRENDING SEARCHES');
-
-              // Check if this is a history item (between RECENT SEARCHES and either VIEW_ALL_HISTORY or TRENDING SEARCHES)
-              final isHistoryItem = recentIndex != -1 &&
-                  index > recentIndex &&
-                  ((viewAllIndex != -1 && index < viewAllIndex) ||
-                      (viewAllIndex == -1 &&
-                          trendingIndex != -1 &&
-                          index < trendingIndex));
-
-              // If this is a history item and we're not expanded, check if it should be hidden
-              if (isHistoryItem && !_isHistoryExpanded) {
-                // Calculate position in history (0-based)
-                final historyPosition = index - (recentIndex + 1);
-                // Skip if beyond the first 5 items
-                if (historyPosition >= 5) {
-                  return const SizedBox.shrink();
-                }
-              }
-
-              // Check if this is a View All button
-              if (suggestion == 'VIEW_ALL_HISTORY') {
-                return ListTile(
-                  leading: Icon(
-                    _isHistoryExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
-                    color: const Color(0xFFFF9E80),
+        const SizedBox(height: 8),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: displayedSearches.length +
+              (_recentSearches.length > 7 && !_showAllHistory ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == displayedSearches.length) {
+              return TextButton(
+                onPressed: () => setState(() => _showAllHistory = true),
+                child: const Text(
+                  'View All',
+                  style: TextStyle(
+                    color: AppTheme.primaryColor,
+                    fontSize: 14,
                   ),
-                  title: Text(
-                    _isHistoryExpanded ? 'Show Less' : 'View All History',
-                    style: const TextStyle(
-                      color: Color(0xFFFF9E80),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  dense: true,
-                  onTap: () {
-                    setState(() {
-                      _isHistoryExpanded = !_isHistoryExpanded;
-                    });
-                  },
-                );
-              }
-
-              // Check if this is a section header
-              if (suggestion == 'RECENT SEARCHES' ||
-                  suggestion == 'TRENDING SEARCHES' ||
-                  suggestion == 'MATCHING HISTORY' ||
-                  suggestion == 'MATCHING TRENDING' ||
-                  suggestion == 'MATCHING CATEGORIES') {
-                // Return a section header
-                return Container(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
-                    border: Border(
-                      bottom: BorderSide(
-                        color: theme.colorScheme.onSurface.withOpacity(0.1),
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        suggestion.contains('RECENT')
-                            ? Icons.history
-                            : suggestion.contains('TRENDING')
-                                ? Icons.trending_up
-                                : Icons.category,
-                        size: 16,
-                        color: suggestion.contains('RECENT')
-                            ? theme.colorScheme.primary
-                            : suggestion.contains('TRENDING')
-                                ? Colors.orange
-                                : theme.colorScheme.secondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        suggestion.replaceAll('_', ' '),
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              final isCategory = suggestion.startsWith('Category:');
-
-              // Check if this is a trending search
-              final isTrending = index > 0 &&
-                  (widget.suggestions
-                          .getRange(0, index)
-                          .contains('TRENDING SEARCHES') ||
-                      widget.suggestions
-                          .getRange(0, index)
-                          .contains('MATCHING TRENDING'));
-
-              // Check if this is a recent search
-              final isRecent = index > 0 &&
-                  (widget.suggestions
-                          .getRange(0, index)
-                          .contains('RECENT SEARCHES') ||
-                      widget.suggestions
-                          .getRange(0, index)
-                          .contains('MATCHING HISTORY'));
-
-              return ListTile(
-                leading: Icon(
-                  isCategory
-                      ? Icons.category
-                      : isTrending
-                          ? Icons.trending_up
-                          : isRecent
-                              ? Icons.history
-                              : Icons.search,
-                  size: 20,
-                  color: isCategory
-                      ? theme.colorScheme.secondary
-                      : isTrending
-                          ? Colors.orange
-                          : isRecent
-                              ? theme.colorScheme.primary.withOpacity(0.7)
-                              : Colors.grey[600],
-                ),
-                title: Text(
-                  isCategory ? suggestion.substring(10) : suggestion,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                dense: true,
-                onTap: () => widget.onSuggestionTap(
-                  isCategory ? suggestion.substring(10) : suggestion,
-                ),
-                trailing: Icon(
-                  Icons.north_west,
-                  size: 16,
-                  color: theme.colorScheme.onSurface.withOpacity(0.4),
                 ),
               );
-            },
-          ),
+            }
+
+            final search = displayedSearches[index];
+            return ListTile(
+              leading: const Icon(Icons.history),
+              title: Text(search),
+              onTap: () => _onHistoryTap(search),
+              dense: true,
+            );
+          },
         ),
       ],
     );
