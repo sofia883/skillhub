@@ -113,6 +113,17 @@ class MyApp extends StatelessWidget {
         title: AppConstants.appName,
         theme: AppTheme.lightTheme,
         debugShowCheckedModeBanner: false,
+        initialRoute: '/',
+        onGenerateRoute: (settings) {
+          if (settings.name == '/main') {
+            return MaterialPageRoute(
+              builder: (context) => MainContainer(
+                arguments: settings.arguments as Map<String, dynamic>?,
+              ),
+            );
+          }
+          return null;
+        },
         home: StreamBuilder(
           stream: FirebaseAuth.instance.authStateChanges(),
           builder: (context, snapshot) {

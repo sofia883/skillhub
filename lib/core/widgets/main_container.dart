@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:skill_hub/features/home/presentation/pages/home_screen.dart';
 import 'package:skill_hub/features/profile/presentation/pages/profile_page.dart';
@@ -7,7 +8,12 @@ import 'package:skill_hub/features/settings/presentation/pages/settings_page.dar
 import 'package:skill_hub/core/theme/app_theme.dart';
 
 class MainContainer extends StatefulWidget {
-  const MainContainer({super.key});
+  final Map<String, dynamic>? arguments;
+
+  const MainContainer({
+    super.key,
+    this.arguments,
+  });
 
   @override
   State<MainContainer> createState() => _MainContainerState();
@@ -15,91 +21,119 @@ class MainContainer extends StatefulWidget {
 
 class _MainContainerState extends State<MainContainer> {
   int _currentIndex = 0;
-  List<int> _navigationStack = [0]; // Track navigation history, start with home
+  final List<int> _navigationStack = [0];
+  late final List<Widget> _screens;
 
-  // List of screens to navigate between
-  late final List<Widget> _screens = [
-    const HomeScreen(),
-    const ProfilePage(),
-    AddSkillPage(
-      onSkillAdded: () {
-        // When skill is added, navigate to home page
-        _updateIndex(0); // 0 is the index for HomeScreen
-      },
-    ),
-    const SettingsPage(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _initializeScreens();
+    if (widget.arguments != null) {
+      final initialIndex = widget.arguments!['initialIndex'] as int?;
+      final clearStack = widget.arguments!['clearStack'] as bool? ?? false;
 
-  // Add a key to access the scaffold for showing snackbars
-  final GlobalKey<ScaffoldMessengerState> _scaffoldKey =
-      GlobalKey<ScaffoldMessengerState>();
-
-  void _updateIndex(int index) {
-    if (index != _currentIndex) {
-      setState(() {
-        _navigationStack.add(_currentIndex); // Add current index to history
-        _currentIndex = index;
-      });
-    } else {
-      // If tapping on Add Skills tab and already on that tab, refresh it
-      if (index == 2) {
+      if (initialIndex != null) {
         setState(() {
-          _screens[2] = AddSkillPage(
-            key: UniqueKey(),
-            onSkillAdded: () {
-              // When skill is added, navigate to home page
-              _updateIndex(0); // 0 is the index for HomeScreen
-            },
-          );
-        });
-      }
-      // If tapping on Home tab and already on that tab, refresh it
-      else if (index == 0) {
-        setState(() {
-          _screens[0] = HomeScreen(key: UniqueKey());
+          _currentIndex = initialIndex;
+          if (clearStack) {
+            // If coming from skill addition, set home as the only previous screen
+            _navigationStack.clear();
+            _navigationStack.add(0); // Home
+            _navigationStack.add(initialIndex);
+          } else {
+            _navigationStack.clear();
+            _navigationStack.add(initialIndex);
+          }
         });
       }
     }
   }
 
-  bool _handleBackButton() {
-    if (_navigationStack.isEmpty) {
-      return true; // Allow app to close if navigation stack is empty
+  void _initializeScreens() {
+    _screens = [
+      const HomeScreen(key: ValueKey('home')),
+      ProfilePage(
+        key: const ValueKey('profile'),
+        initialTab: 1, // Always show skills tab when coming from add skill
+        newSkillId: widget.arguments?['newSkillId'] as String?,
+        showLoadingFor: widget.arguments?['showLoadingFor'] as int?,
+      ),
+      const AddSkillPage(key: ValueKey('addSkill')),
+      const SettingsPage(key: ValueKey('settings')),
+    ];
+  }
+
+  void _updateIndex(int index) {
+    if (index != _currentIndex) {
+      setState(() {
+        _currentIndex = index;
+        // Always add new index to navigation stack
+        _navigationStack.add(index);
+      });
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_navigationStack.length > 1) {
+      _navigationStack.removeLast();
+      setState(() {
+        _currentIndex = _navigationStack.last;
+      });
+      return false;
     }
 
-    // Pop the last screen from navigation stack
-    setState(() {
-      _currentIndex = _navigationStack.removeLast();
-    });
-    return false; // Don't close the app
+    // If we're on the home screen (first screen), show exit dialog
+    if (_currentIndex == 0) {
+      final shouldExit = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Exit App'),
+          content: const Text('Are you sure you want to exit the app?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(true);
+                SystemNavigator.pop(); // This will completely close the app
+              },
+              child: const Text('Exit'),
+            ),
+          ],
+        ),
+      );
+      return shouldExit ?? false;
+    }
+
+    return true;
   }
 
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () async {
-        return _handleBackButton();
-      },
-      child: ScaffoldMessenger(
-        key: _scaffoldKey,
-        child: Scaffold(
-          body: _screens[_currentIndex],
-          bottomNavigationBar: CurvedNavigationBar(
-            backgroundColor: Colors.transparent,
-            color: AppTheme.primaryColor,
-            buttonBackgroundColor: AppTheme.primaryColor,
-            height: 60,
-            animationDuration: const Duration(milliseconds: 300),
-            animationCurve: Curves.easeInOut,
-            index: _currentIndex,
-            items: const [
-              Icon(Icons.home, color: Colors.white),
-              Icon(Icons.person, color: Colors.white),
-              Icon(Icons.add, color: Colors.white),
-              Icon(Icons.settings, color: Colors.white),
-            ],
-            onTap: _updateIndex,
-          ),
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        body: IndexedStack(
+          index: _currentIndex,
+          children: _screens,
+        ),
+        bottomNavigationBar: CurvedNavigationBar(
+          backgroundColor: Colors.transparent,
+          color: AppTheme.primaryColor,
+          buttonBackgroundColor: AppTheme.primaryColor,
+          height: 60,
+          animationDuration: const Duration(milliseconds: 300),
+          animationCurve: Curves.easeInOut,
+          index: _currentIndex,
+          items: const [
+            Icon(Icons.home, color: Colors.white),
+            Icon(Icons.person, color: Colors.white),
+            Icon(Icons.add, color: Colors.white),
+            Icon(Icons.settings, color: Colors.white),
+          ],
+          onTap: _updateIndex,
         ),
       ),
     );

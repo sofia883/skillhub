@@ -10,13 +10,18 @@ import 'package:skill_hub/features/home/domain/entities/skill.dart';
 import 'package:skill_hub/features/profile/presentation/pages/edit_profile_page.dart';
 import 'package:skill_hub/features/skills/presentation/pages/add_skill_page.dart';
 import 'package:skill_hub/features/skills/presentation/pages/edit_skill_page.dart';
+import 'package:skill_hub/features/home/presentation/widgets/skill_card.dart';
 
 class ProfilePage extends StatefulWidget {
   final int initialTab;
+  final String? newSkillId;
+  final int? showLoadingFor;
 
   const ProfilePage({
     super.key,
     this.initialTab = 0,
+    this.newSkillId,
+    this.showLoadingFor,
   });
 
   @override
@@ -31,6 +36,8 @@ class _ProfilePageState extends State<ProfilePage>
   final _userRepository = UserRepository();
   bool _isLoading = false;
   bool _showLoadingAnimation = true;
+  String? _loadingSkillId;
+  Timer? _loadingTimer;
 
   // Tab controller
   late TabController _tabController;
@@ -60,12 +67,17 @@ class _ProfilePageState extends State<ProfilePage>
     _loadUserData();
     _initializeSkillsStream();
 
-    // Show loading animation for 1 second if coming from skill addition
-    if (widget.initialTab == 1) {
-      Future.delayed(const Duration(seconds: 1), () {
+    // Initialize loading state if there's a new skill
+    if (widget.newSkillId != null && widget.showLoadingFor != null) {
+      _loadingSkillId = widget.newSkillId;
+      _showLoadingAnimation = true;
+
+      // Set timer to hide loading after specified duration
+      _loadingTimer = Timer(Duration(seconds: widget.showLoadingFor!), () {
         if (mounted) {
           setState(() {
             _showLoadingAnimation = false;
+            _loadingSkillId = null;
           });
         }
       });
@@ -103,6 +115,7 @@ class _ProfilePageState extends State<ProfilePage>
   void dispose() {
     _skillsSubscription?.cancel();
     _tabController.dispose();
+    _loadingTimer?.cancel();
     super.dispose();
   }
 
@@ -291,6 +304,31 @@ class _ProfilePageState extends State<ProfilePage>
     }
   }
 
+  // Add this method to check if a skill should show loading
+  bool _shouldShowLoadingForSkill(String skillId) {
+    return _showLoadingAnimation && _loadingSkillId == skillId;
+  }
+
+  // Pass this method to your skills list/grid widget
+  Widget _buildSkillItem(Skill skill) {
+    if (_shouldShowLoadingForSkill(skill.id)) {
+      return Stack(
+        children: [
+          SkillCard(skill: skill),
+          Positioned.fill(
+            child: Container(
+              color: Colors.white.withOpacity(0.7),
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return SkillCard(skill: skill);
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -303,27 +341,10 @@ class _ProfilePageState extends State<ProfilePage>
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: const Text('Profile'),
           backgroundColor: Colors.white,
           elevation: 0,
-          title: Text(
-            'My Profile',
-            style: TextStyle(
-              color: Theme.of(context).primaryColor,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: Theme.of(context).primaryColor),
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-          ),
-          actions: [
-            IconButton(
-              icon: Icon(Icons.edit, color: Theme.of(context).primaryColor),
-              onPressed: _editProfile,
-            ),
-          ],
         ),
         body: Column(
           children: [
@@ -603,8 +624,7 @@ class _ProfilePageState extends State<ProfilePage>
                       const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final skill = _skills[index];
-                    final isNewSkill =
-                        index == _skills.length - 1 && widget.initialTab == 1;
+                    final isNewSkill = skill['id'] == _loadingSkillId;
 
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(vertical: 8),
@@ -624,18 +644,15 @@ class _ProfilePageState extends State<ProfilePage>
                               ),
                             ),
                           ),
-                          if (isNewSkill)
+                          if (isNewSkill && _showLoadingAnimation)
                             Positioned.fill(
                               child: Container(
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(8),
-                                  color: Colors.black.withOpacity(0.3),
+                                  color: Colors.white.withOpacity(0.7),
                                 ),
                                 child: const Center(
-                                  child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white),
-                                  ),
+                                  child: CircularProgressIndicator(),
                                 ),
                               ),
                             ),
@@ -645,15 +662,31 @@ class _ProfilePageState extends State<ProfilePage>
                         skill['title'] ?? '',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: isNewSkill
+                          color: isNewSkill && _showLoadingAnimation
                               ? Theme.of(context).primaryColor
                               : null,
                         ),
                       ),
-                      subtitle: Text(
-                        skill['description'] ?? '',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            skill['description'] ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (isNewSkill && _showLoadingAnimation)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                'Loading new skill...',
+                                style: TextStyle(
+                                  color: Theme.of(context).primaryColor,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -678,18 +711,17 @@ class _ProfilePageState extends State<ProfilePage>
                                           user?.displayName ??
                                           'Unknown Provider',
                                       imageUrl: skill['imageUrl'] ??
-                                          'https://via.placeholder.com/150',
+                                          'https://via.placeholder.com/50',
                                       createdAt: skill['createdAt']?.toDate() ??
                                           DateTime.now(),
-                                      userId: user?.uid ?? '',
                                     ),
                                   ),
                                 ),
-                              );
+                              ).then((_) => _initializeSkillsStream());
                             },
                           ),
                           IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
+                            icon: const Icon(Icons.delete),
                             onPressed: () => _showDeleteSkillDialog(
                               Skill(
                                 id: skill['id'],
@@ -702,10 +734,9 @@ class _ProfilePageState extends State<ProfilePage>
                                     user?.displayName ??
                                     'Unknown Provider',
                                 imageUrl: skill['imageUrl'] ??
-                                    'https://via.placeholder.com/150',
+                                    'https://via.placeholder.com/50',
                                 createdAt: skill['createdAt']?.toDate() ??
                                     DateTime.now(),
-                                userId: user?.uid ?? '',
                               ),
                             ),
                           ),

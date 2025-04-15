@@ -568,8 +568,21 @@ class _AddSkillPageState extends State<AddSkillPage> {
           ),
         );
 
-        // Call the callback to navigate to home screen
-        widget.onSkillAdded?.call();
+        // Navigate to profile page with skills tab
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/main',
+            (route) => false,
+            arguments: {
+              'initialIndex': 1, // Profile tab
+              'profileTab': 1, // Skills tab
+              'clearStack': true, // Signal to clear navigation stack
+              'newSkillId': skillId, // Pass the new skill ID
+              'showLoadingFor': 2, // Show loading for 2 seconds
+            },
+          );
+        }
       }
     } catch (e) {
       setState(() {
@@ -711,42 +724,7 @@ class _AddSkillPageState extends State<AddSkillPage> {
         appBar: AppBar(
           title: const Text('Add Your Skill'),
           elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () async {
-              // Check if there are unsaved changes
-              if (_titleController.text.isNotEmpty ||
-                  _descriptionController.text.isNotEmpty ||
-                  _priceController.text.isNotEmpty ||
-                  _selectedImages.isNotEmpty) {
-                final bool shouldPop = await showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Discard changes?'),
-                        content: const Text(
-                            'Are you sure you want to leave? Your changes will be lost.'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(false),
-                            child: const Text('Cancel'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(true),
-                            child: const Text('Discard'),
-                          ),
-                        ],
-                      ),
-                    ) ??
-                    false;
-
-                if (shouldPop && mounted) {
-                  Navigator.of(context).pop();
-                }
-              } else {
-                Navigator.of(context).pop();
-              }
-            },
-          ),
+          automaticallyImplyLeading: false,
         ),
         body: Form(
           key: _formKey,
