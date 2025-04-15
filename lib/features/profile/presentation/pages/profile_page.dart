@@ -30,6 +30,7 @@ class _ProfilePageState extends State<ProfilePage>
   final _firestore = FirebaseFirestore.instance;
   final _userRepository = UserRepository();
   bool _isLoading = false;
+  bool _showLoadingAnimation = true;
 
   // Tab controller
   late TabController _tabController;
@@ -58,6 +59,19 @@ class _ProfilePageState extends State<ProfilePage>
     );
     _loadUserData();
     _initializeSkillsStream();
+
+    // Show loading animation for 1 second if coming from skill addition
+    if (widget.initialTab == 1) {
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          setState(() {
+            _showLoadingAnimation = false;
+          });
+        }
+      });
+    } else {
+      _showLoadingAnimation = false;
+    }
   }
 
   void _initializeSkillsStream() {
@@ -281,310 +295,146 @@ class _ProfilePageState extends State<ProfilePage>
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.of(context).pop();
+        return true;
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        title: Text(
-          'My Profile',
-          style: TextStyle(
-            color: Theme.of(context).primaryColor,
-            fontWeight: FontWeight.bold,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: Text(
+            'My Profile',
+            style: TextStyle(
+              color: Theme.of(context).primaryColor,
+              fontWeight: FontWeight.bold,
+            ),
           ),
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: Theme.of(context).primaryColor),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+          actions: [
+            IconButton(
+              icon: Icon(Icons.edit, color: Theme.of(context).primaryColor),
+              onPressed: _editProfile,
+            ),
+          ],
         ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.edit, color: Theme.of(context).primaryColor),
-            onPressed: _editProfile,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Profile Header
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Theme.of(context).primaryColor,
-                      width: 2,
+        body: Column(
+          children: [
+            // Profile Header
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Theme.of(context).primaryColor,
+                        width: 2,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      radius: 40,
+                      backgroundColor: Colors.white,
+                      backgroundImage:
+                          _userProfilePic != 'https://via.placeholder.com/150'
+                              ? NetworkImage(_userProfilePic)
+                              : null,
+                      child:
+                          _userProfilePic == 'https://via.placeholder.com/150'
+                              ? Text(
+                                  _userName[0].toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context).primaryColor,
+                                  ),
+                                )
+                              : null,
                     ),
                   ),
-                  child: CircleAvatar(
-                    radius: 40,
-                    backgroundColor: Colors.white,
-                    backgroundImage:
-                        _userProfilePic != 'https://via.placeholder.com/150'
-                            ? NetworkImage(_userProfilePic)
-                            : null,
-                    child: _userProfilePic == 'https://via.placeholder.com/150'
-                        ? Text(
-                            _userName[0].toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).primaryColor,
-                            ),
-                          )
-                        : null,
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _userName,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _userName,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _userEmail,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
+                        const SizedBox(height: 4),
+                        Text(
+                          _userEmail,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          // Tab Bar
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(
-                  color: Colors.grey[300]!,
-                  width: 1,
-                ),
+                ],
               ),
             ),
-            child: TabBar(
-              controller: _tabController,
-              labelColor: Theme.of(context).primaryColor,
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: Theme.of(context).primaryColor,
-              tabs: const [
-                Tab(text: 'Information'),
-                Tab(text: 'My Skills'),
-              ],
-            ),
-          ),
 
-          // Tab Bar View
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // Information Tab
-                ListView(
-                  children: _buildProfileOptions(),
+            // Tab Bar
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Colors.grey[300]!,
+                    width: 1,
+                  ),
                 ),
-
-                // Skills Tab
-                RefreshIndicator(
-                  onRefresh: _refreshProfile,
-                  child: user != null
-                      ? Builder(
-                          builder: (context) {
-                            if (_isLoading) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            }
-
-                            return Column(
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.all(20.0),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'My Skills (${_skills.length})',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                      ),
-                                      ElevatedButton.icon(
-                                        onPressed: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) =>
-                                                  const AddSkillPage(),
-                                            ),
-                                          ).then(
-                                              (_) => _initializeSkillsStream());
-                                        },
-                                        icon: const Icon(Icons.add),
-                                        label: const Text('Add Skill'),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                              Theme.of(context).primaryColor,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _skills.isEmpty
-                                      ? const Center(
-                                          child: Text('No skills added yet'),
-                                        )
-                                      : ListView.separated(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 20),
-                                          itemCount: _skills.length,
-                                          separatorBuilder: (context, index) =>
-                                              const Divider(height: 1),
-                                          itemBuilder: (context, index) {
-                                            final skill = _skills[index];
-                                            return ListTile(
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 8),
-                                              leading: Container(
-                                                width: 50,
-                                                height: 50,
-                                                decoration: BoxDecoration(
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                  image: DecorationImage(
-                                                    image: NetworkImage(
-                                                      skill['imageUrl'] ??
-                                                          'https://via.placeholder.com/50',
-                                                    ),
-                                                    fit: BoxFit.cover,
-                                                  ),
-                                                ),
-                                              ),
-                                              title: Text(
-                                                skill['title'] ?? '',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              subtitle: Text(
-                                                skill['description'] ?? '',
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              trailing: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    icon:
-                                                        const Icon(Icons.edit),
-                                                    onPressed: () {
-                                                      Navigator.push(
-                                                        context,
-                                                        MaterialPageRoute(
-                                                          builder: (context) =>
-                                                              EditSkillPage(
-                                                            skill: Skill(
-                                                              id: skill['id'],
-                                                              title: skill[
-                                                                  'title'],
-                                                              description: skill[
-                                                                  'description'],
-                                                              category: skill[
-                                                                  'category'],
-                                                              price: double.parse(
-                                                                  skill['price']
-                                                                      .toString()),
-                                                              rating: skill[
-                                                                          'rating']
-                                                                      ?.toDouble() ??
-                                                                  0.0,
-                                                              provider: skill[
-                                                                      'provider'] ??
-                                                                  user.displayName ??
-                                                                  'Unknown Provider',
-                                                              imageUrl: skill[
-                                                                      'imageUrl'] ??
-                                                                  'https://via.placeholder.com/150',
-                                                              createdAt: skill[
-                                                                          'createdAt']
-                                                                      ?.toDate() ??
-                                                                  DateTime
-                                                                      .now(),
-                                                              userId: user.uid,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      );
-                                                    },
-                                                  ),
-                                                  IconButton(
-                                                    icon: const Icon(
-                                                        Icons.delete,
-                                                        color: Colors.red),
-                                                    onPressed: () =>
-                                                        _showDeleteSkillDialog(
-                                                            Skill(
-                                                      id: skill['id'],
-                                                      title: skill['title'],
-                                                      description:
-                                                          skill['description'],
-                                                      category:
-                                                          skill['category'],
-                                                      price: double.parse(
-                                                          skill['price']
-                                                              .toString()),
-                                                      rating: skill['rating']
-                                                              ?.toDouble() ??
-                                                          0.0,
-                                                      provider: skill[
-                                                              'provider'] ??
-                                                          user.displayName ??
-                                                          'Unknown Provider',
-                                                      imageUrl: skill[
-                                                              'imageUrl'] ??
-                                                          'https://via.placeholder.com/150',
-                                                      createdAt:
-                                                          skill['createdAt']
-                                                                  ?.toDate() ??
-                                                              DateTime.now(),
-                                                      userId: user.uid,
-                                                    )),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                ),
-                              ],
-                            );
-                          },
-                        )
-                      : const Center(
-                          child: Text('Please log in to view your skills'),
-                        ),
-                ),
-              ],
+              ),
+              child: TabBar(
+                controller: _tabController,
+                labelColor: Theme.of(context).primaryColor,
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: Theme.of(context).primaryColor,
+                tabs: const [
+                  Tab(text: 'Information'),
+                  Tab(text: 'My Skills'),
+                ],
+              ),
             ),
-          ),
-        ],
+
+            // Tab Bar View
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  // Information Tab
+                  ListView(
+                    children: _buildProfileOptions(),
+                  ),
+
+                  // Skills Tab
+                  RefreshIndicator(
+                    onRefresh: _refreshProfile,
+                    child: user != null
+                        ? _buildSkillsTab(user)
+                        : const Center(
+                            child: Text('Please log in to view your skills'),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -688,5 +538,184 @@ class _ProfilePageState extends State<ProfilePage>
       ),
       const Divider(height: 1),
     ];
+  }
+
+  Widget _buildSkillsTab(User? user) {
+    if (_isLoading || (_showLoadingAnimation && widget.initialTab == 1)) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Loading your skills...',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'My Skills (${_skills.length})',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AddSkillPage(),
+                    ),
+                  ).then((_) => _initializeSkillsStream());
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Add Skill'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _skills.isEmpty
+              ? const Center(
+                  child: Text('No skills added yet'),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _skills.length,
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final skill = _skills[index];
+                    final isNewSkill =
+                        index == _skills.length - 1 && widget.initialTab == 1;
+
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      leading: Stack(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              image: DecorationImage(
+                                image: NetworkImage(
+                                  skill['imageUrl'] ??
+                                      'https://via.placeholder.com/50',
+                                ),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          if (isNewSkill)
+                            Positioned.fill(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  color: Colors.black.withOpacity(0.3),
+                                ),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      title: Text(
+                        skill['title'] ?? '',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isNewSkill
+                              ? Theme.of(context).primaryColor
+                              : null,
+                        ),
+                      ),
+                      subtitle: Text(
+                        skill['description'] ?? '',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => EditSkillPage(
+                                    skill: Skill(
+                                      id: skill['id'],
+                                      title: skill['title'],
+                                      description: skill['description'],
+                                      category: skill['category'],
+                                      price: double.parse(
+                                          skill['price'].toString()),
+                                      rating:
+                                          skill['rating']?.toDouble() ?? 0.0,
+                                      provider: skill['provider'] ??
+                                          user?.displayName ??
+                                          'Unknown Provider',
+                                      imageUrl: skill['imageUrl'] ??
+                                          'https://via.placeholder.com/150',
+                                      createdAt: skill['createdAt']?.toDate() ??
+                                          DateTime.now(),
+                                      userId: user?.uid ?? '',
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _showDeleteSkillDialog(
+                              Skill(
+                                id: skill['id'],
+                                title: skill['title'],
+                                description: skill['description'],
+                                category: skill['category'],
+                                price: double.parse(skill['price'].toString()),
+                                rating: skill['rating']?.toDouble() ?? 0.0,
+                                provider: skill['provider'] ??
+                                    user?.displayName ??
+                                    'Unknown Provider',
+                                imageUrl: skill['imageUrl'] ??
+                                    'https://via.placeholder.com/150',
+                                createdAt: skill['createdAt']?.toDate() ??
+                                    DateTime.now(),
+                                userId: user?.uid ?? '',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
   }
 }

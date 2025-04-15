@@ -17,12 +17,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final ChatService _chatService = ChatService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentUser = _auth.currentUser;
-    
+
     if (currentUser == null) {
       return Scaffold(
         appBar: AppBar(
@@ -57,7 +57,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
       );
     }
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chats'),
@@ -68,7 +68,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          
+
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return Center(
               child: Column(
@@ -97,54 +97,56 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ),
             );
           }
-          
+
           final chats = snapshot.data!.docs;
-          
+
           return ListView.builder(
             itemCount: chats.length,
             itemBuilder: (context, index) {
               final chat = chats[index].data() as Map<String, dynamic>;
               final chatId = chats[index].id;
-              final participants = List<String>.from(chat['participants'] ?? []);
+              final participants =
+                  List<String>.from(chat['participants'] ?? []);
               final otherUserId = participants.firstWhere(
                 (id) => id != currentUser.uid,
                 orElse: () => '',
               );
-              
+
               if (otherUserId.isEmpty) return const SizedBox.shrink();
-              
+
               return FutureBuilder<DocumentSnapshot>(
                 future: _firestore.collection('users').doc(otherUserId).get(),
                 builder: (context, userSnapshot) {
                   String userName = 'Unknown User';
                   String userPhotoUrl = '';
-                  
+
                   if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                    final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                    final userData =
+                        userSnapshot.data!.data() as Map<String, dynamic>?;
                     if (userData != null) {
                       userName = userData['displayName'] ?? 'Unknown User';
                       userPhotoUrl = userData['photoURL'] ?? '';
                     }
                   }
-                  
+
                   final lastMessage = chat['lastMessage'] as String? ?? '';
                   final lastMessageTime = chat['lastMessageTime'] as Timestamp?;
                   final skillTitle = chat['skillTitle'] as String? ?? 'Skill';
                   final skillId = chat['skillId'] as String? ?? '';
-                  
+
                   String timeString = '';
                   if (lastMessageTime != null) {
                     final dateTime = lastMessageTime.toDate();
                     final now = DateTime.now();
-                    
-                    if (dateTime.year == now.year && 
-                        dateTime.month == now.month && 
+
+                    if (dateTime.year == now.year &&
+                        dateTime.month == now.month &&
                         dateTime.day == now.day) {
                       // Today, show time
                       timeString = DateFormat.jm().format(dateTime);
-                    } else if (dateTime.year == now.year && 
-                               dateTime.month == now.month && 
-                               dateTime.day == now.day - 1) {
+                    } else if (dateTime.year == now.year &&
+                        dateTime.month == now.month &&
+                        dateTime.day == now.day - 1) {
                       // Yesterday
                       timeString = 'Yesterday';
                     } else {
@@ -152,14 +154,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       timeString = DateFormat.MMMd().format(dateTime);
                     }
                   }
-                  
+
                   return ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
-                      backgroundImage: userPhotoUrl.isNotEmpty ? NetworkImage(userPhotoUrl) : null,
+                      backgroundColor:
+                          theme.colorScheme.primary.withOpacity(0.1),
+                      backgroundImage: userPhotoUrl.isNotEmpty
+                          ? NetworkImage(userPhotoUrl)
+                          : null,
                       child: userPhotoUrl.isEmpty
                           ? Text(
-                              userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                              userName.isNotEmpty
+                                  ? userName[0].toUpperCase()
+                                  : '?',
                               style: TextStyle(
                                 color: theme.colorScheme.primary,
                                 fontWeight: FontWeight.bold,
@@ -198,25 +205,35 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     onTap: () async {
                       // Get skill data
                       try {
-                        final skillDoc = await _firestore.collection('skills').doc(skillId).get();
+                        final skillDoc = await _firestore
+                            .collection('skills')
+                            .doc(skillId)
+                            .get();
                         if (skillDoc.exists) {
-                          final skillData = skillDoc.data() as Map<String, dynamic>;
-                          
+                          final skillData =
+                              skillDoc.data() as Map<String, dynamic>;
+
                           // Create a Skill object
                           final skill = Skill(
                             id: skillId,
-                            title: skillData['title'] as String? ?? 'Unknown Skill',
-                            description: skillData['description'] as String? ?? '',
-                            category: skillData['category'] as String? ?? 'General',
-                            price: (skillData['price'] as num?)?.toDouble() ?? 0.0,
-                            rating: (skillData['rating'] as num?)?.toDouble() ?? 0.0,
-                            provider: skillData['provider'] as String? ?? 'Unknown Provider',
+                            title: skillData['title'] as String? ??
+                                'Unknown Skill',
+                            description:
+                                skillData['description'] as String? ?? '',
+                            category:
+                                skillData['category'] as String? ?? 'General',
+                            price:
+                                (skillData['price'] as num?)?.toDouble() ?? 0.0,
+                            rating: (skillData['rating'] as num?)?.toDouble() ??
+                                0.0,
+                            provider: skillData['provider'] as String? ??
+                                'Unknown Provider',
                             imageUrl: skillData['imageUrl'] as String? ?? '',
                             createdAt: skillData['createdAt'] != null
                                 ? (skillData['createdAt'] as Timestamp).toDate()
                                 : DateTime.now(),
                           );
-                          
+
                           if (mounted) {
                             Navigator.push(
                               context,

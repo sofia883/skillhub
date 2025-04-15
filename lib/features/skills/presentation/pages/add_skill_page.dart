@@ -552,9 +552,8 @@ class _AddSkillPageState extends State<AddSkillPage> {
       // Save to Firestore
       await _skillRepository.addSkill(skillData);
 
-      // Navigate immediately after successful save
+      // Show success message and navigate back
       if (mounted) {
-        // Show a quick success message
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Skill added successfully!'),
@@ -563,13 +562,12 @@ class _AddSkillPageState extends State<AddSkillPage> {
           ),
         );
 
-        // Navigate to profile page
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const ProfilePage(initialTab: 1),
-          ),
-        );
+        // Use Future.delayed to ensure the navigation happens after the current frame
+        Future.delayed(Duration.zero, () {
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        });
       }
     } catch (e) {
       setState(() {
@@ -666,75 +664,149 @@ class _AddSkillPageState extends State<AddSkillPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Scaffold(
-          appBar: AppBar(
-            title: const Text('Add Your Skill'),
-            elevation: 0,
-          ),
-          body: Form(
-            key: _formKey,
-            child: Stack(
-              children: [
-                Stepper(
-                  type: StepperType.horizontal,
-                  currentStep: _currentStep,
-                  onStepTapped: (step) => setState(() => _currentStep = step),
-                  onStepContinue: _onStepContinue,
-                  onStepCancel: _currentStep == 0
-                      ? null // Disable on first step
-                      : () => setState(() => _currentStep -= 1),
-                  controlsBuilder: (context, details) {
-                    final isLastStep = _currentStep == _steps.length - 1;
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) async {
+        if (didPop) {
+          return;
+        }
 
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 24.0),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              if (_currentStep != 0)
-                                Expanded(
-                                  child: CustomButton(
-                                    text: 'Back',
-                                    onPressed: details.onStepCancel!,
-                                    isOutlined: true,
-                                  ),
-                                ),
-                              if (_currentStep != 0) const SizedBox(width: 12),
-                              Expanded(
-                                child: CustomButton(
-                                  text: isLastStep ? 'Submit' : 'Next',
-                                  onPressed: details.onStepContinue!,
-                                  isLoading: _isLoading || _isUploadingImages,
-                                ),
-                              ),
-                            ],
+        // Check if there are unsaved changes
+        if (_titleController.text.isNotEmpty ||
+            _descriptionController.text.isNotEmpty ||
+            _priceController.text.isNotEmpty ||
+            _selectedImages.isNotEmpty) {
+          final bool shouldPop = await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Discard changes?'),
+                  content: const Text(
+                      'Are you sure you want to leave? Your changes will be lost.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('Discard'),
+                    ),
+                  ],
+                ),
+              ) ??
+              false;
+
+          if (shouldPop) {
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
+          }
+        } else {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Add Your Skill'),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              // Check if there are unsaved changes
+              if (_titleController.text.isNotEmpty ||
+                  _descriptionController.text.isNotEmpty ||
+                  _priceController.text.isNotEmpty ||
+                  _selectedImages.isNotEmpty) {
+                final bool shouldPop = await showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Discard changes?'),
+                        content: const Text(
+                            'Are you sure you want to leave? Your changes will be lost.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(false),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(true),
+                            child: const Text('Discard'),
                           ),
                         ],
                       ),
-                    );
-                  },
-                  steps: _steps,
-                ),
-              ],
-            ),
+                    ) ??
+                    false;
+
+                if (shouldPop && mounted) {
+                  Navigator.of(context).pop();
+                }
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
           ),
         ),
-        if (_isLoading)
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-              child: Container(
-                color: Colors.black.withOpacity(0.3),
-                child: const Center(
-                  child: CircularProgressIndicator(),
-                ),
+        body: Form(
+          key: _formKey,
+          child: Stack(
+            children: [
+              Stepper(
+                type: StepperType.horizontal,
+                currentStep: _currentStep,
+                onStepTapped: (step) => setState(() => _currentStep = step),
+                onStepContinue: _onStepContinue,
+                onStepCancel: _currentStep == 0
+                    ? null
+                    : () => setState(() => _currentStep -= 1),
+                controlsBuilder: (context, details) {
+                  final isLastStep = _currentStep == _steps.length - 1;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 24.0),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            if (_currentStep != 0)
+                              Expanded(
+                                child: CustomButton(
+                                  text: 'Back',
+                                  onPressed: details.onStepCancel!,
+                                  isOutlined: true,
+                                ),
+                              ),
+                            if (_currentStep != 0) const SizedBox(width: 12),
+                            Expanded(
+                              child: CustomButton(
+                                text: isLastStep ? 'Submit' : 'Next',
+                                onPressed: details.onStepContinue!,
+                                isLoading: _isLoading || _isUploadingImages,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                steps: _steps,
               ),
-            ),
+              if (_isLoading)
+                Positioned.fill(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                    child: Container(
+                      color: Colors.black.withOpacity(0.3),
+                      child: const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
-      ],
+        ),
+      ),
     );
   }
 
