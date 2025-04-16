@@ -13,10 +13,12 @@ import '../../../../features/search/presentation/widgets/search_history.dart';
 
 class HomeScreen extends StatefulWidget {
   final bool initialSearchMode;
+  final bool isRoot;
 
   const HomeScreen({
     super.key,
     this.initialSearchMode = false,
+    this.isRoot = true,
   });
 
   @override
@@ -418,6 +420,7 @@ class HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (context) => HomeScreen(
           initialSearchMode: true,
+          isRoot: false,
         ),
       ),
     );
@@ -598,15 +601,29 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<bool> _showExitDialog() async {
+    return await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit App'),
+            content: const Text('Are you sure you want to exit?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('No'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Yes'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Clear navigation history when reaching home screen (not in search mode)
-    if (!_isSearching) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      });
-    }
-
     return WillPopScope(
       onWillPop: () async {
         if (_isSearching) {
@@ -614,25 +631,13 @@ class HomeScreenState extends State<HomeScreen> {
           return false;
         }
 
-        // Always show exit dialog on home screen
-        return await showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Exit App'),
-                content: const Text('Are you sure you want to exit?'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('No'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('Yes'),
-                  ),
-                ],
-              ),
-            ) ??
-            false;
+        // If this is the root home screen, show exit dialog
+        if (widget.isRoot) {
+          return _showExitDialog();
+        }
+
+        // For non-root screens (like search), just pop normally
+        return true;
       },
       child: RefreshIndicator(
         onRefresh: () => _loadSkills(forceRefresh: true),

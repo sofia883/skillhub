@@ -41,7 +41,6 @@ class _MainContainerState extends State<MainContainer> {
             _navigationStack.add(0); // Home
             _navigationStack.add(initialIndex);
           } else {
-            _navigationStack.clear();
             _navigationStack.add(initialIndex);
           }
         });
@@ -63,25 +62,7 @@ class _MainContainerState extends State<MainContainer> {
     ];
   }
 
-  void _updateIndex(int index) {
-    if (index != _currentIndex) {
-      setState(() {
-        _currentIndex = index;
-        // Always add new index to navigation stack
-        _navigationStack.add(index);
-      });
-    }
-  }
-
   Future<bool> _onWillPop() async {
-    if (_navigationStack.length > 1) {
-      _navigationStack.removeLast();
-      setState(() {
-        _currentIndex = _navigationStack.last;
-      });
-      return false;
-    }
-
     // If we're on the home screen (first screen), show exit dialog
     if (_currentIndex == 0) {
       final shouldExit = await showDialog<bool>(
@@ -107,7 +88,32 @@ class _MainContainerState extends State<MainContainer> {
       return shouldExit ?? false;
     }
 
-    return true;
+    // If we have previous screens in the stack, go back to the last one
+    if (_navigationStack.length > 1) {
+      setState(() {
+        _navigationStack.removeLast();
+        _currentIndex = _navigationStack.last;
+      });
+      return false;
+    }
+
+    // If no previous screens, go to home
+    setState(() {
+      _currentIndex = 0;
+      _navigationStack.clear();
+      _navigationStack.add(0);
+    });
+    return false;
+  }
+
+  void _updateIndex(int index) {
+    if (index != _currentIndex) {
+      setState(() {
+        _currentIndex = index;
+        // Add new index to navigation stack
+        _navigationStack.add(index);
+      });
+    }
   }
 
   @override
