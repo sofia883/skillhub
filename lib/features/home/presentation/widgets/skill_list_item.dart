@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:skill_hub/features/home/domain/entities/skill.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:skill_hub/features/chat/presentation/pages/chat_screen.dart';
+import 'package:skill_hub/features/home/presentation/widgets/provider_card.dart';
+import 'package:shimmer/shimmer.dart';
 
 class SkillListItem extends StatefulWidget {
   final Skill skill;
@@ -19,6 +22,8 @@ class SkillListItem extends StatefulWidget {
 class _SkillListItemState extends State<SkillListItem> {
   String? _providerPhotoUrl;
   bool _isLoading = true;
+  bool _isOnline = false;
+  DateTime? _lastSeen;
 
   @override
   void initState() {
@@ -27,6 +32,17 @@ class _SkillListItemState extends State<SkillListItem> {
   }
 
   Future<void> _loadProviderData() async {
+    // If we already have the provider data in the skill model, use that
+    if (widget.skill.providerImageUrl != null) {
+      setState(() {
+        _providerPhotoUrl = widget.skill.providerImageUrl;
+        _isOnline = widget.skill.isOnline ?? false;
+        _lastSeen = widget.skill.lastSeen;
+        _isLoading = false;
+      });
+      return;
+    }
+
     if (widget.skill.userId == null) {
       setState(() {
         _isLoading = false;
@@ -42,9 +58,13 @@ class _SkillListItemState extends State<SkillListItem> {
 
       if (userDoc.exists) {
         final userData = userDoc.data();
-        if (userData != null && userData['photoURL'] != null) {
+        if (userData != null) {
           setState(() {
             _providerPhotoUrl = userData['photoURL'];
+            _isOnline = userData['isOnline'] ?? false;
+            if (userData['lastSeen'] != null) {
+              _lastSeen = (userData['lastSeen'] as Timestamp).toDate();
+            }
           });
         }
       }
@@ -57,125 +77,97 @@ class _SkillListItemState extends State<SkillListItem> {
     }
   }
 
-  String _getProviderInitial() {
-    if (widget.skill.provider.isEmpty) return '?';
-    return widget.skill.provider[0].toUpperCase();
+  void _handleChat() {
+    if (widget.skill.userId == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          providerId: widget.skill.userId!,
+          providerName: widget.skill.provider,
+          skill: widget.skill,
+        ),
+      ),
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
+  Widget _buildLoadingCard() {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
+      child: Shimmer.fromColors(
+        baseColor: Colors.grey[300]!,
+        highlightColor: Colors.grey[100]!,
+        child: Container(
+          height: 200,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Profile image or initial
-              _isLoading
-                  ? const CircleAvatar(
-                      radius: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : CircleAvatar(
-                      radius: 28,
-                      backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
-                      backgroundImage: _providerPhotoUrl != null
-                          ? NetworkImage(_providerPhotoUrl!)
-                          : null,
-                      child: _providerPhotoUrl == null
-                          ? Text(
-                              _getProviderInitial(),
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                color: theme.colorScheme.primary,
-                              ),
-                            )
-                          : null,
+              Row(
+                children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
                     ),
-              const SizedBox(width: 16),
-              
-              // Skill info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Skill title
-                    Text(
-                      widget.skill.title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    
-                    // Provider name
-                    Text(
-                      widget.skill.provider,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 4),
-                    
-                    // Category
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        widget.skill.category,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 16),
+                  Container(
+                    width: 200,
+                    height: 20,
+                    color: Colors.white,
+                  ),
+                ],
               ),
-              
-              // Rating
+              const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.star_rounded,
-                      color: Colors.amber,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      widget.skill.rating.toString(),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.amber.shade900,
-                      ),
-                    ),
-                  ],
-                ),
+                width: double.infinity,
+                height: 16,
+                color: Colors.white,
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: 200,
+                height: 16,
+                color: Colors.white,
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return _buildLoadingCard();
+    }
+
+    return ProviderCard(
+      providerId: widget.skill.userId ?? '',
+      providerName: widget.skill.provider,
+      profileImage: _providerPhotoUrl,
+      location: widget.skill.location,
+      description: widget.skill.description,
+      skills: [widget.skill.category],
+      experienceImages: widget.skill.experienceImages,
+      rating: widget.skill.rating.toInt(),
+      reviewCount: widget.skill.reviewCount ?? 0,
+      isOnline: _isOnline,
+      lastSeen: _lastSeen,
+      isVerified: widget.skill.isVerified,
+      onChat: _handleChat,
+      onViewProfile: widget.onTap ?? () {},
+      hourlyRate: widget.skill.hourlyRate,
+      education: widget.skill.education,
+      experience: widget.skill.experience,
+      certifications: widget.skill.certifications,
+      languages: widget.skill.languages,
+      availability: widget.skill.availability,
     );
   }
 }

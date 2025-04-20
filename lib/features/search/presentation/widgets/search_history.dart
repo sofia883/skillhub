@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_theme.dart';
 
 class SearchHistory extends StatefulWidget {
-  final Function(String) onHistorySelected;
+  final Function(String, {bool focusSearchBar}) onHistorySelected;
   final List<String> searchHistory;
   final List<String> trendingSearches;
   final String currentQuery;

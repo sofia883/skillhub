@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:skill_hub/features/home/presentation/pages/home_screen.dart';
 import 'package:skill_hub/features/profile/presentation/pages/profile_page.dart';
-import 'package:skill_hub/features/skills/presentation/pages/add_skill_page.dart';
-import 'package:skill_hub/features/settings/presentation/pages/settings_page.dart';
-import 'package:skill_hub/core/theme/app_theme.dart';
+import 'package:skill_hub/features/posts/presentation/pages/add_post_page.dart';
+import 'package:skill_hub/features/jobs/presentation/pages/jobs_page.dart';
 
 class MainContainer extends StatefulWidget {
   final Map<String, dynamic>? arguments;
@@ -36,9 +34,8 @@ class _MainContainerState extends State<MainContainer> {
         setState(() {
           _currentIndex = initialIndex;
           if (clearStack) {
-            // If coming from skill addition, set home as the only previous screen
             _navigationStack.clear();
-            _navigationStack.add(0); // Home
+            _navigationStack.add(0);
             _navigationStack.add(initialIndex);
           } else {
             _navigationStack.add(initialIndex);
@@ -51,19 +48,13 @@ class _MainContainerState extends State<MainContainer> {
   void _initializeScreens() {
     _screens = [
       const HomeScreen(key: ValueKey('home')),
-      ProfilePage(
-        key: const ValueKey('profile'),
-        initialTab: 1, // Always show skills tab when coming from add skill
-        newSkillId: widget.arguments?['newSkillId'] as String?,
-        showLoadingFor: widget.arguments?['showLoadingFor'] as int?,
-      ),
-      const AddSkillPage(key: ValueKey('addSkill')),
-      const SettingsPage(key: ValueKey('settings')),
+      const AddPostPage(key: ValueKey('post')),
+      const JobsPage(key: ValueKey('jobs')),
+      const ProfilePage(key: ValueKey('profile')),
     ];
   }
 
   Future<bool> _onWillPop() async {
-    // If we're on the home screen (first screen), show exit dialog
     if (_currentIndex == 0) {
       final shouldExit = await showDialog<bool>(
         context: context,
@@ -78,7 +69,7 @@ class _MainContainerState extends State<MainContainer> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop(true);
-                SystemNavigator.pop(); // This will completely close the app
+                SystemNavigator.pop();
               },
               child: const Text('Exit'),
             ),
@@ -88,7 +79,6 @@ class _MainContainerState extends State<MainContainer> {
       return shouldExit ?? false;
     }
 
-    // If we have previous screens in the stack, go back to the last one
     if (_navigationStack.length > 1) {
       setState(() {
         _navigationStack.removeLast();
@@ -97,7 +87,6 @@ class _MainContainerState extends State<MainContainer> {
       return false;
     }
 
-    // If no previous screens, go to home
     setState(() {
       _currentIndex = 0;
       _navigationStack.clear();
@@ -110,7 +99,6 @@ class _MainContainerState extends State<MainContainer> {
     if (index != _currentIndex) {
       setState(() {
         _currentIndex = index;
-        // Add new index to navigation stack
         _navigationStack.add(index);
       });
     }
@@ -118,6 +106,8 @@ class _MainContainerState extends State<MainContainer> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
@@ -125,21 +115,98 @@ class _MainContainerState extends State<MainContainer> {
           index: _currentIndex,
           children: _screens,
         ),
-        bottomNavigationBar: CurvedNavigationBar(
-          backgroundColor: Colors.transparent,
-          color: AppTheme.primaryColor,
-          buttonBackgroundColor: AppTheme.primaryColor,
-          height: 60,
-          animationDuration: const Duration(milliseconds: 300),
-          animationCurve: Curves.easeInOut,
-          index: _currentIndex,
-          items: const [
-            Icon(Icons.home, color: Colors.white),
-            Icon(Icons.person, color: Colors.white),
-            Icon(Icons.add, color: Colors.white),
-            Icon(Icons.settings, color: Colors.white),
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              top: BorderSide(
+                color: Colors.grey.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildNavItem(
+                    index: 0,
+                    icon: Icons.home_outlined,
+                    activeIcon: Icons.home,
+                    label: 'Home',
+                    theme: theme,
+                  ),
+                  _buildNavItem(
+                    index: 1,
+                    icon: Icons.add_circle_outline,
+                    activeIcon: Icons.add_circle,
+                    label: 'Post',
+                    theme: theme,
+                  ),
+                  _buildNavItem(
+                    index: 2,
+                    icon: Icons.work_outline_rounded,
+                    activeIcon: Icons.work_rounded,
+                    label: 'Jobs',
+                    theme: theme,
+                  ),
+                  _buildNavItem(
+                    index: 3,
+                    icon: Icons.person_outline,
+                    activeIcon: Icons.person,
+                    label: 'Profile',
+                    theme: theme,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required int index,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    required ThemeData theme,
+  }) {
+    final isSelected = _currentIndex == index;
+
+    return InkWell(
+      onTap: () => _updateIndex(index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSelected ? activeIcon : icon,
+              color: isSelected ? theme.colorScheme.primary : Colors.grey[600],
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color:
+                    isSelected ? theme.colorScheme.primary : Colors.grey[600],
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w500 : FontWeight.w400,
+              ),
+            ),
           ],
-          onTap: _updateIndex,
         ),
       ),
     );

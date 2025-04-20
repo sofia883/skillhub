@@ -72,7 +72,7 @@ class SkillList extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 16),
-            
+
             // Skill info placeholders
             Expanded(
               child: Column(
@@ -88,7 +88,7 @@ class SkillList extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // Provider name placeholder
                   Container(
                     height: 12,
@@ -98,9 +98,9 @@ class SkillList extends StatelessWidget {
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 8),
-                  
+
                   // Category placeholder
                   Container(
                     height: 12,
@@ -113,7 +113,7 @@ class SkillList extends StatelessWidget {
                 ],
               ),
             ),
-            
+
             // Rating placeholder
             Container(
               width: 40,

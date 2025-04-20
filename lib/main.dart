@@ -3,23 +3,23 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:skill_hub/features/auth/presentation/pages/login_screen.dart';
-import 'package:skill_hub/features/home/presentation/pages/home_screen.dart';
-import 'package:skill_hub/features/home/presentation/pages/home_screen.dart';
+import 'package:skill_hub/features/auth/presentation/pages/welcome_screen.dart';
 import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'core/services/connectivity_service.dart';
 import 'core/widgets/network_aware_widget.dart';
 import 'core/widgets/main_container.dart';
 import 'firebase_options.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'core/widgets/offline_indicator.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize connectivity service
-  ConnectivityService().initialize();
+  await ConnectivityService().initialize();
 
   try {
-    // Initialize Firebase first
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
@@ -103,41 +103,85 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final _connectivityService = ConnectivityService();
+  bool _showOfflineIndicator = false;
+  String? _lastRoute;
+  final _auth = FirebaseAuth.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLastRoute();
+    _setupConnectivityListener();
+  }
+
+  Future<void> _loadLastRoute() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _lastRoute = prefs.getString('last_route');
+    });
+  }
+
+  void _setupConnectivityListener() {
+    _connectivityService.connectivityStream.listen((status) {
+      setState(() {
+        _showOfflineIndicator = status == ConnectivityStatus.offline;
+      });
+    });
+  }
+
+  Future<void> _saveCurrentRoute(String route) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_route', route);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return NetworkAwareWidget(
-      child: MaterialApp(
-        title: AppConstants.appName,
-        theme: AppTheme.lightTheme,
-        debugShowCheckedModeBanner: false,
-        initialRoute: '/',
-        onGenerateRoute: (settings) {
-          if (settings.name == '/main') {
-            return MaterialPageRoute(
-              builder: (context) => MainContainer(
-                arguments: settings.arguments as Map<String, dynamic>?,
-              ),
-            );
+    return MaterialApp(
+      title: AppConstants.appName,
+      theme: AppTheme.lightTheme,
+      debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        return Scaffold(
+          body: Stack(
+            children: [
+              child ?? const SizedBox(),
+              if (_showOfflineIndicator)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: OfflineIndicator(
+                    onRetry: () => _connectivityService.checkConnectivity(),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+      home: StreamBuilder<User?>(
+        stream: _auth.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
           }
-          return null;
+
+          if (snapshot.hasData) {
+            // User is logged in
+            return const MainContainer();
+          } else {
+            // User is not logged in
+            return const WelcomeScreen();
+          }
         },
-        home: StreamBuilder(
-          stream: FirebaseAuth.instance.authStateChanges(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasData) {
-              return const MainContainer();
-            }
-
-            return const LoginScreen();
-          },
-        ),
       ),
     );
   }

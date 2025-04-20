@@ -10,6 +10,13 @@ import '../../../../features/skills/presentation/pages/skill_detail_page.dart';
 import '../../../../features/home/presentation/widgets/skill_list.dart';
 import '../../../../features/search/presentation/widgets/search_results_list.dart';
 import '../../../../features/search/presentation/widgets/search_history.dart';
+import 'package:country_state_city_picker/country_state_city_picker.dart';
+import '../../../../core/widgets/enhanced_csc_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import '../../../../features/profile/presentation/pages/profile_page.dart';
 
 class HomeScreen extends StatefulWidget {
   final bool initialSearchMode;
@@ -168,6 +175,28 @@ class HomeScreenState extends State<HomeScreen> {
   // Skills list
   List<Skill> _filteredSkills = [];
 
+  // Filter states
+  RangeValues _priceRange = const RangeValues(0, 10000);
+  String? _selectedFilterCategory;
+  String? _selectedCountry;
+  String? _selectedState;
+  String? _selectedCity;
+  bool _showNearbyOnly = false;
+  double _nearbyRadius = 10.0; // in kilometers
+  String _selectedCurrency = '₹'; // Default to INR
+  String? _userLocation;
+
+  // Currency options
+  final List<Map<String, String>> _currencies = [
+    {'symbol': '₹', 'name': 'INR'},
+    {'symbol': '\$', 'name': 'USD'},
+    {'symbol': '€', 'name': 'EUR'},
+    {'symbol': '£', 'name': 'GBP'},
+  ];
+
+  // Original search results before filtering
+  List<Skill> _originalSearchResults = [];
+
   // Load search history from SharedPreferences
   Future<void> _loadSearchHistory() async {
     try {
@@ -233,6 +262,8 @@ class HomeScreenState extends State<HomeScreen> {
         }
       });
     });
+
+    _getCurrentLocation();
   }
 
   @override
@@ -350,6 +381,7 @@ class HomeScreenState extends State<HomeScreen> {
     if (_searchQuery.isEmpty) {
       setState(() {
         _filteredSkills = [];
+        _originalSearchResults = [];
         _isLoading = false;
         _showSearchSuggestions = true;
         _showingRelatedResults = false;
@@ -381,6 +413,7 @@ class HomeScreenState extends State<HomeScreen> {
     }).toList();
 
     setState(() {
+      _originalSearchResults = filtered;
       _filteredSkills = filtered;
       _isLoading = false;
       _showSearchSuggestions = false;
@@ -582,14 +615,23 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _onHistorySelected(String query) {
-    _searchController.text = query;
+  void _onHistorySelected(String query, {bool focusSearchBar = false}) {
     setState(() {
       _searchQuery = query;
       _showSearchSuggestions = false;
       _isSearching = true;
     });
-    _performSearch();
+
+    if (focusSearchBar) {
+      _searchController.text = query;
+      _searchController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _searchController.text.length),
+      );
+    } else {
+      _searchController.text = query;
+      _addToSearchHistory(query);
+      _performSearch();
+    }
   }
 
   // Add a new button to show related results
@@ -630,161 +672,187 @@ class HomeScreenState extends State<HomeScreen> {
           Navigator.of(context).pop();
           return false;
         }
-
-        // If this is the root home screen, show exit dialog
         if (widget.isRoot) {
           return _showExitDialog();
         }
-
-        // For non-root screens (like search), just pop normally
         return true;
       },
       child: RefreshIndicator(
         onRefresh: () => _loadSkills(forceRefresh: true),
         child: Scaffold(
           appBar: AppBar(
-            leading: _isSearching
-                ? IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () => Navigator.of(context).pop(),
-                  )
-                : null,
+            elevation: 0,
+            backgroundColor: Colors.white,
+            systemOverlayStyle: SystemUiOverlayStyle.dark,
             title: _isSearching
-                ? Container(
-                    height: 48,
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.15),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                      border: Border.all(
-                          color: Colors.grey.withOpacity(0.2), width: 1),
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search skills, categories, providers...',
-                        border: InputBorder.none,
-                        hintStyle: TextStyle(
-                          color: Colors.grey[500],
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        prefixIcon: Container(
-                          margin: const EdgeInsets.only(left: 12, right: 8),
-                          child: const Icon(
-                            Icons.search_rounded,
-                            color: Color(0xFFFF9E80),
-                            size: 24,
-                          ),
-                        ),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? Container(
-                                margin: const EdgeInsets.only(right: 12),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(50),
-                                    child: Icon(
-                                      Icons.clear_rounded,
-                                      color: Colors.grey[500],
-                                      size: 20,
-                                    ),
-                                    onTap: _clearSearch,
+                ? _buildSearchField()
+                : Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ProfilePage(),
+                            ),
+                          );
+                        },
+                        child: Hero(
+                          tag: 'profile_avatar',
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.grey.withOpacity(0.2),
+                                width: 1,
+                              ),
+                            ),
+                            child: ClipOval(
+                              child: Image.network(
+                                'https://via.placeholder.com/32',
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Container(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withOpacity(0.1),
+                                  child: Icon(
+                                    Icons.person,
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                    size: 20,
                                   ),
                                 ),
-                              )
-                            : null,
-                        contentPadding: const EdgeInsets.symmetric(
-                            vertical: 14, horizontal: 16),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      style: TextStyle(
-                        color: Colors.grey[800],
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _isSearching = true;
+                            });
+                          },
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.search,
+                                  color: Colors.grey[600],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Search',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      onTap: () {
-                        setState(() {
-                          _isSearching = true;
-                          _showSearchSuggestions = true;
-                          _filteredSkills = [];
-                        });
-                      },
-                      autofocus: true,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (value) {
-                        if (value.isNotEmpty) {
-                          _addToSearchHistory(value.trim());
-                          setState(() {
-                            _searchQuery = value.trim();
-                            _showSearchSuggestions = false;
-                          });
-                          _performSearch();
-                        }
-                      },
-                    ),
-                  )
-                : const Text('Skill Hub'),
-            actions: [
-              IconButton(
-                icon: Icon(_isSearching ? Icons.close : Icons.search),
-                tooltip: _isSearching ? 'Close Search' : 'Search Skills',
-                onPressed: _isSearching
-                    ? () => Navigator.of(context).pop()
-                    : _onSearchIconPressed,
-              ),
-            ],
+                      const SizedBox(width: 12),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.chat_outlined,
+                          color: Colors.grey,
+                        ),
+                        onPressed: () {
+                          // Navigate to messages
+                        },
+                      ),
+                    ],
+                  ),
           ),
-          body: Stack(
+          body: Column(
             children: [
-              Column(
-                children: [
-                  const ConnectivityStatusIndicator(),
-                  if (!_isSearching) _buildCategoryFilter(),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: _isSearching
-                        ? (_showSearchSuggestions
-                            ? SearchHistory(
-                                searchHistory: _searchHistory,
-                                trendingSearches: _trendingSearches,
-                                currentQuery: _searchController.text,
-                                onHistorySelected: _onHistorySelected,
-                                onClearHistory: _clearSearchHistory,
-                              )
-                            : SearchResultsList(
-                                skills: _filteredSkills,
-                                searchQuery: _searchQuery,
-                                onSkillTap: _onSkillTap,
-                                isLoading: _isLoading,
-                                showRelatedHeader: _showingRelatedResults,
-                              ))
-                        : (_filteredSkills.isEmpty
-                            ? _buildEmptyState()
-                            : SkillList(
-                                skills: _filteredSkills,
-                                onSkillTap: _onSkillTap,
-                              )),
-                  ),
-                ],
+              const ConnectivityStatusIndicator(),
+              if (!_isSearching) _buildCategoryFilter(),
+              const SizedBox(height: 8),
+              Expanded(
+                child: _isSearching
+                    ? (_showSearchSuggestions
+                        ? SearchHistory(
+                            searchHistory: _searchHistory,
+                            trendingSearches: _trendingSearches,
+                            currentQuery: _searchController.text,
+                            onHistorySelected: _onHistorySelected,
+                            onClearHistory: _clearSearchHistory,
+                          )
+                        : SearchResultsList(
+                            skills: _filteredSkills,
+                            searchQuery: _searchQuery,
+                            onSkillTap: _onSkillTap,
+                            isLoading: _isLoading,
+                            showRelatedHeader: _showingRelatedResults,
+                          ))
+                    : (_filteredSkills.isEmpty
+                        ? _buildEmptyState()
+                        : SkillList(
+                            skills: _filteredSkills,
+                            onSkillTap: _onSkillTap,
+                          )),
               ),
-              if (_isLoading)
-                Container(
-                  color: Colors.black.withOpacity(0.1),
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField() {
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Search',
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          prefixIcon: Icon(
+            Icons.search,
+            color: Colors.grey[600],
+            size: 20,
+          ),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  iconSize: 20,
+                  onPressed: _clearSearch,
+                )
+              : null,
+        ),
+        style: const TextStyle(fontSize: 14),
+        textInputAction: TextInputAction.search,
+        onSubmitted: (value) {
+          if (value.isNotEmpty) {
+            _addToSearchHistory(value.trim());
+            setState(() {
+              _searchQuery = value.trim();
+              _showSearchSuggestions = false;
+            });
+            _performSearch();
+          }
+        },
       ),
     );
   }
@@ -968,5 +1036,494 @@ class HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  void _showFilterBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => WillPopScope(
+          onWillPop: () async {
+            // Reset filters when dialog is closed by back button
+            setModalState(() {
+              setState(() {
+                _resetFilters();
+              });
+            });
+            return true;
+          },
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.75,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(20),
+                      topRight: Radius.circular(20),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Filter Results',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          // Reset filters when dialog is closed by X button
+                          setModalState(() {
+                            setState(() {
+                              _resetFilters();
+                            });
+                          });
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Category Filter
+                        const Text(
+                          'Category',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: DropdownButton<String>(
+                            value: _selectedFilterCategory,
+                            isExpanded: true,
+                            hint: const Text('Select Category'),
+                            underline: const SizedBox(),
+                            items: categories.map((category) {
+                              return DropdownMenuItem(
+                                value: category,
+                                child: Text(category),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setModalState(() {
+                                setState(() {
+                                  _selectedFilterCategory = value;
+                                });
+                                _applyFilters();
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Price Range Filter with Currency
+                        Row(
+                          children: [
+                            const Text(
+                              'Price Range',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: DropdownButton<String>(
+                                value: _selectedCurrency,
+                                underline: const SizedBox(),
+                                items: _currencies.map((currency) {
+                                  return DropdownMenuItem(
+                                    value: currency['symbol'],
+                                    child: Text(
+                                        '${currency['symbol']} ${currency['name']}'),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    setState(() {
+                                      _selectedCurrency = value!;
+                                    });
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        RangeSlider(
+                          values: _priceRange,
+                          min: 0,
+                          max: 10000,
+                          divisions: 100,
+                          labels: RangeLabels(
+                            '$_selectedCurrency${_priceRange.start.round()}',
+                            '$_selectedCurrency${_priceRange.end.round()}',
+                          ),
+                          onChanged: (values) {
+                            setModalState(() {
+                              setState(() {
+                                _priceRange = values;
+                              });
+                              _applyFilters();
+                            });
+                          },
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                                '$_selectedCurrency${_priceRange.start.round()}'),
+                            Text(
+                                '$_selectedCurrency${_priceRange.end.round()}'),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Location Filter with CSC Picker
+                        const Text(
+                          'Location',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: EnhancedCSCPicker(
+                            selectedCountry: _selectedCountry,
+                            selectedState: _selectedState,
+                            selectedCity: _selectedCity,
+                            onCountryChanged: (value) {
+                              setModalState(() {
+                                setState(() {
+                                  _selectedCountry = value;
+                                  _selectedState = null;
+                                  _selectedCity = null;
+                                });
+                                _applyFilters();
+                              });
+                            },
+                            onStateChanged: (value) {
+                              if (value.startsWith("No states")) {
+                                setModalState(() {
+                                  setState(() {
+                                    _selectedState = _selectedCountry;
+                                    _selectedCity = null;
+                                  });
+                                  _applyFilters();
+                                });
+                                return;
+                              }
+                              setModalState(() {
+                                setState(() {
+                                  _selectedState = value;
+                                  _selectedCity = null;
+                                });
+                                _applyFilters();
+                              });
+                            },
+                            onCityChanged: (value) {
+                              if (value.startsWith("No cities")) {
+                                setModalState(() {
+                                  setState(() {
+                                    _selectedCity = _selectedState;
+                                  });
+                                  _applyFilters();
+                                });
+                                return;
+                              }
+                              setModalState(() {
+                                setState(() {
+                                  _selectedCity = value;
+                                });
+                                _applyFilters();
+                              });
+                            },
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Nearby Filter with Location Display
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.1),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Show Nearby Skills',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Switch.adaptive(
+                                    value: _showNearbyOnly,
+                                    activeColor: const Color(0xFFFF9E80),
+                                    onChanged: (value) {
+                                      setModalState(() {
+                                        setState(() {
+                                          _showNearbyOnly = value;
+                                        });
+                                        _applyFilters();
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                              if (_selectedCity != null &&
+                                  _selectedState != null &&
+                                  _selectedCountry != null) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.home_rounded,
+                                      size: 20,
+                                      color: Color(0xFFFF9E80),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '${_selectedCity}, ${_selectedState}, ${_selectedCountry}',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Apply and Reset Buttons
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  setModalState(() {
+                                    setState(() {
+                                      _resetFilters();
+                                    });
+                                  });
+                                  // Don't close the dialog
+                                },
+                                child: const Text('Reset'),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  _applyFilters();
+                                  Navigator.pop(context);
+                                },
+                                child: const Text('Apply'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _applyFilters() {
+    if (_originalSearchResults.isEmpty) return;
+
+    List<Skill> filteredResults = List.from(_originalSearchResults);
+
+    // Apply category filter
+    if (_selectedFilterCategory != null && _selectedFilterCategory != 'All') {
+      filteredResults = filteredResults
+          .where((skill) => skill.category == _selectedFilterCategory)
+          .toList();
+    }
+
+    // Apply price range filter
+    filteredResults = filteredResults.where((skill) {
+      if (skill.price == 0) return true; // Handle "Contact for Price" case
+
+      // Convert price based on currency
+      double convertedPrice = skill.price;
+      // TODO: Implement actual currency conversion
+
+      return convertedPrice >= _priceRange.start &&
+          convertedPrice <= _priceRange.end;
+    }).toList();
+
+    // Apply location filter
+    if (_selectedCountry != null) {
+      filteredResults = filteredResults.where((skill) {
+        if (skill.location == null) return false;
+
+        bool matchesCountry = skill.location!
+            .toLowerCase()
+            .contains(_selectedCountry!.toLowerCase());
+
+        if (!matchesCountry) return false;
+
+        if (_selectedState != null &&
+            !_selectedState!.startsWith('No states')) {
+          bool matchesState = skill.location!
+              .toLowerCase()
+              .contains(_selectedState!.toLowerCase());
+          if (!matchesState) return false;
+
+          if (_selectedCity != null &&
+              !_selectedCity!.startsWith('No cities')) {
+            return skill.location!
+                .toLowerCase()
+                .contains(_selectedCity!.toLowerCase());
+          }
+        }
+        return true;
+      }).toList();
+    }
+
+    // Apply nearby filter
+    if (_showNearbyOnly && _userLocation != null) {
+      // TODO: Implement nearby filtering using user's location
+      // This will require getting user's location and calculating distance
+      filteredResults = filteredResults.where((skill) {
+        if (skill.location == null) return false;
+        return skill.location!
+            .toLowerCase()
+            .contains(_userLocation!.toLowerCase());
+      }).toList();
+    }
+
+    setState(() {
+      _filteredSkills = filteredResults;
+    });
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+
+        if (userDoc.exists) {
+          final location = userDoc.data()?['location'] as String?;
+          if (location != null) {
+            final parts = location.split(', ');
+            if (parts.length >= 3) {
+              setState(() {
+                _userLocation =
+                    '${parts[0]}, ${parts[1]}, ${parts[2]}'; // City, State, Country format
+                _selectedCity = parts[0]; // City
+                _selectedState = parts[1]; // State
+                _selectedCountry = parts[2]; // Country
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('Error getting user location: $e');
+    }
+  }
+
+  // Add this new method to handle filter reset
+  void _resetFilters() {
+    _selectedFilterCategory = null;
+    _priceRange = const RangeValues(0, 10000);
+    _selectedCountry = null;
+    _selectedState = null;
+    _selectedCity = null;
+    _showNearbyOnly = false;
+    _nearbyRadius = 10.0;
+    _selectedCurrency = '₹';
+
+    // Force the CSC picker to reset
+    if (mounted) {
+      Future.microtask(() {
+        setState(() {
+          // This will trigger a rebuild of the CSC picker
+          _selectedCountry = null;
+        });
+      });
+    }
+
+    _applyFilters();
   }
 }

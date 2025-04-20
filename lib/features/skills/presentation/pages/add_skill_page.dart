@@ -21,6 +21,7 @@ import 'package:intl_phone_field/intl_phone_field.dart';
 import 'package:uuid/uuid.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
+import '../../../../core/widgets/enhanced_csc_picker.dart';
 
 class AddSkillPage extends StatefulWidget {
   final VoidCallback? onSkillAdded;
@@ -1010,7 +1011,10 @@ class _AddSkillPageState extends State<AddSkillPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SelectState(
+              EnhancedCSCPicker(
+                selectedCountry: _selectedCountry,
+                selectedState: _selectedState,
+                selectedCity: _selectedCity,
                 onCountryChanged: (value) async {
                   setState(() {
                     _selectedCountry = value;
@@ -1019,12 +1023,25 @@ class _AddSkillPageState extends State<AddSkillPage> {
                   });
                 },
                 onStateChanged: (value) async {
+                  if (value.startsWith("No states in")) {
+                    setState(() {
+                      _selectedState = _selectedCountry;
+                      _selectedCity = null;
+                    });
+                    return;
+                  }
                   setState(() {
                     _selectedState = value;
                     _selectedCity = null;
                   });
                 },
                 onCityChanged: (value) {
+                  if (value.startsWith("No cities in")) {
+                    setState(() {
+                      _selectedCity = _selectedState;
+                    });
+                    return;
+                  }
                   setState(() {
                     _selectedCity = value;
                   });
@@ -1036,13 +1053,11 @@ class _AddSkillPageState extends State<AddSkillPage> {
                 ),
               ),
               if (_autovalidateMode == AutovalidateMode.always &&
-                  (_selectedCountry == null ||
-                      _selectedState == null ||
-                      _selectedCity == null))
+                  _selectedCountry == null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8, left: 12),
                   child: Text(
-                    'Please select your location (country, state, and city)',
+                    'Please select at least a country',
                     style: TextStyle(
                       color: Colors.red,
                       fontSize: 12,
